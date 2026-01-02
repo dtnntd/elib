@@ -1,0 +1,44 @@
+version: '3.8'
+
+services:
+  # -----------------------------
+  # Backend API (Go)
+  # -----------------------------
+  server:
+    build: 
+      context: ./server
+      dockerfile: Dockerfile.dev
+    container_name: elib-server
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./server:/app
+    environment:
+      - MONGO_URI=mongodb://mongos1:27020
+      - DB_NAME=elibrary
+      - GIN_MODE=debug
+    networks:
+      - elib
+    depends_on:
+      - client # Just to ensure network ready
+
+  # -----------------------------
+  # Frontend Dev (React + Vite)
+  # -----------------------------
+  client:
+    image: node:22-alpine
+    container_name: elib-client
+    working_dir: /app
+    volumes:
+      - ./client:/app
+      - /app/node_modules
+    command: sh -c "npm install && npm run dev -- --host"
+    ports:
+      - "5173:5173"
+    networks:
+      - elib
+
+networks:
+  elib:
+    external: true
+    name: elibrary-mongo_elib-net  # Verified correct name from docker network ls

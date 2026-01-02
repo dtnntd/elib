@@ -1,0 +1,35 @@
+# Dependencies
+node_modules/
+
+# Environment
+.env
+.env.local
+
+# System
+.DS_Store
+Thumbs.db
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+logs/
+*.log
+
+# Data
+/scripts/*.csv
+/scripts/*.json
+!/scripts/package.json
+/tmp/
+
+# IDE
+.idea/
+.vscode/
+
+# Build
+dist/
+build/
+coverage/
+tests/output/
+borrow_*.json
+verify_*.py

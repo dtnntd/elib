@@ -1,0 +1,53 @@
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   KẾT NỐI MONGODB COMPASS - HƯỚNG DẪN NHANH
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+⭐ KẾT NỐI CHÍNH (Khuyến nghị):
+   mongodb://localhost:27020/
+
+   → Kết nối qua mongos router
+   → Xem toàn bộ sharded cluster
+   → Database: elibrary
+   → Collections: branches, books, copies, members, loans, transactions
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+📌 CÁC KẾT NỐI KHÁC:
+
+Shard 1 (rsCity):
+  - hn1 (PRIMARY):  mongodb://localhost:27017/?directConnection=true
+  - hp1 (SECONDARY): mongodb://localhost:27018/?directConnection=true  
+  - dn1 (SECONDARY): mongodb://localhost:27019/?directConnection=true
+
+Shard 2 (rsExtra):
+  - ex1 (PRIMARY):  mongodb://localhost:27217/?directConnection=true
+  - ex2 (SECONDARY): mongodb://localhost:27218/?directConnection=true
+
+Config Servers:
+  - cfg1: mongodb://localhost:27117/?directConnection=true
+  - cfg2: mongodb://localhost:27118/?directConnection=true
+  - cfg3: mongodb://localhost:27119/?directConnection=true
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+🔍 LỆNH XEM NHANH:
+
+# Count tất cả collections
+docker exec mongos1 mongosh --port 27020 elibrary --quiet --eval "
+  print('branches:', db.branches.countDocuments());
+  print('books:', db.books.countDocuments());
+  print('copies:', db.copies.countDocuments());
+  print('members:', db.members.countDocuments());
+  print('loans:', db.loans.countDocuments());
+  print('transactions:', db.transactions.countDocuments());
+"
+
+# Xem branches
+docker exec mongos1 mongosh --port 27020 elibrary --quiet --eval "db.branches.find().pretty()"
+
+# Xem shard distribution
+docker exec mongos1 mongosh --port 27020 elibrary --quiet --eval "db.copies.getShardDistribution()"
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+📖 Chi tiết đầy đủ: /home/dtnntd/csdl/final/MONGODB_COMPASS.md
