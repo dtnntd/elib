@@ -69,10 +69,10 @@ export default function BookDetail() {
                         <div className="mb-4 flex items-start justify-between">
                             <div>
                                 <span className="inline-block rounded-full bg-cyan-500/10 px-3 py-1 text-xs font-semibold text-cyan-400 mb-2">
-                                    {book.subjects[0]}
+                                    {book.subjects?.[0] || 'General'}
                                 </span>
                                 <h1 className="text-3xl font-bold text-white sm:text-4xl">{book.title}</h1>
-                                <p className="mt-2 text-lg text-slate-400">by {book.authors.join(', ')}</p>
+                                <p className="mt-2 text-lg text-slate-400">by {book.authors?.join(', ') || 'Unknown Author'}</p>
                             </div>
                             <div className="text-right">
                                 <p className="text-2xl font-bold text-emerald-400">{book.price?.toLocaleString()} đ</p>

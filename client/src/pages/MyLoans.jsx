@@ -114,12 +114,20 @@ export default function MyLoans() {
                                                 </span>
                                             )}
                                         </div>
-                                        <div className="mt-2">
-                                            <span className={cn("px-2 py-0.5 rounded-full text-xs font-bold",
-                                                loan.status === "OVERDUE" ? "bg-red-500/20 text-red-400" : "bg-emerald-500/20 text-emerald-400"
-                                            )}>
-                                                {loan.status}
-                                            </span>
+                                        <div className="mt-2 text-right">
+                                            {((loan.status === 'BORROWED' || loan.status === 'ACTIVE') && new Date(loan.dueDate) < new Date()) ? (
+                                                <span className="px-2 py-0.5 rounded-full text-xs font-bold bg-red-500/20 text-red-400">
+                                                    OVERDUE
+                                                </span>
+                                            ) : (
+                                                <span className={cn("px-2 py-0.5 rounded-full text-xs font-bold",
+                                                    loan.status === "OVERDUE" ? "bg-red-500/20 text-red-400" :
+                                                        loan.status === "ACTIVE" || loan.status === "BORROWED" ? "bg-cyan-500/10 text-cyan-400" :
+                                                            "bg-emerald-500/20 text-emerald-400"
+                                                )}>
+                                                    {loan.status}
+                                                </span>
+                                            )}
                                         </div>
                                     </div>
                                 </div>

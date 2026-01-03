@@ -53,8 +53,23 @@ export const AuthProvider = ({ children }) => {
         setUser(null);
     };
 
+    const refreshUser = async () => {
+        try {
+            const res = await api.get('/wallet/balance');
+            const newBalance = res.data.balance;
+            setUser(prev => {
+                if (!prev) return prev;
+                const updated = { ...prev, walletBalance: newBalance };
+                localStorage.setItem('user', JSON.stringify(updated));
+                return updated;
+            });
+        } catch (error) {
+            console.error("Failed to refresh user data", error);
+        }
+    };
+
     return (
-        <AuthContext.Provider value={{ user, login, register, logout, loading }}>
+        <AuthContext.Provider value={{ user, login, register, logout, refreshUser, loading }}>
             {children}
         </AuthContext.Provider>
     );

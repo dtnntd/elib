@@ -26,6 +26,9 @@ func GetBooks(c *gin.Context) {
 	limit, _ := strconv.Atoi(c.DefaultQuery("limit", "12"))
 	search := c.Query("q")
 	subject := c.Query("subject")
+	author := c.Query("author")
+	language := c.Query("language")
+	yearStr := c.Query("year")
 
 	filter := bson.M{}
 	
@@ -38,6 +41,19 @@ func GetBooks(c *gin.Context) {
 	}
 	if subject != "" {
 		filter["subjects"] = subject
+	}
+	if author != "" {
+		// If using regex for partial match
+		filter["authors"] = bson.M{"$regex": author, "$options": "i"}
+	}
+	if language != "" {
+		filter["lang"] = language
+	}
+	if yearStr != "" {
+		year, err := strconv.Atoi(yearStr)
+		if err == nil {
+			filter["publishedYear"] = year
+		}
 	}
 
 	opts := options.Find().SetSkip(int64((page - 1) * limit)).SetLimit(int64(limit))

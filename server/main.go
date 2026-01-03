@@ -55,6 +55,21 @@ func main() {
 			loans.PUT("/checkout/:id", controllers.ConfirmPickup)
 		}
 	}
+	
+	wallet := api.Group("/wallet")
+	wallet.Use(middleware.AuthMiddleware())
+	{
+		wallet.POST("/topup", controllers.TopUp)
+		wallet.GET("/history", controllers.GetWalletHistory)
+		wallet.GET("/balance", controllers.GetWalletBalance)
+	}
 
-	r.Run(":8080")
+	stats := api.Group("/stats")
+	stats.Use(middleware.AuthMiddleware()) // Ideally check for Staff Role
+	{
+		stats.GET("/dashboard", controllers.GetDashboardStats)
+		stats.GET("/trends", controllers.GetMonthlyTrends)
+	}
+
+	r.Run(":8081")
 }

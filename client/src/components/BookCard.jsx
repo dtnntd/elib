@@ -3,6 +3,8 @@ import { Book as BookIcon } from 'lucide-react';
 import { cn } from '../lib/utils';
 
 export function BookCard({ book }) {
+    if (!book) return null;
+
     // Generate a predictable gradient based on ID for visual variety
     const gradients = [
         'from-pink-500 to-rose-500',
@@ -11,7 +13,10 @@ export function BookCard({ book }) {
         'from-amber-500 to-orange-500',
         'from-violet-500 to-purple-500'
     ];
-    const gradient = gradients[book.id.charCodeAt(book.id.length - 1) % gradients.length];
+    const gradientIndex = (book?.id?.length || 0) > 0
+        ? book.id.charCodeAt(book.id.length - 1) % gradients.length
+        : 0;
+    const gradient = gradients[gradientIndex];
 
     return (
         <Link
@@ -35,7 +40,7 @@ export function BookCard({ book }) {
                     {book.title}
                 </h3>
                 <p className="mt-1 line-clamp-1 text-sm text-slate-400">
-                    by {book.authors.join(', ')}
+                    by {book.authors?.join(', ') || 'Unknown Author'}
                 </p>
             </div>
         </Link>

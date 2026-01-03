@@ -8,6 +8,8 @@ import BookDetail from './pages/BookDetail';
 
 import MyLoans from './pages/MyLoans';
 import StaffDashboard from './pages/StaffDashboard';
+import WalletPage from './pages/WalletPage';
+import { cn } from './lib/utils';
 
 // Protected Route Component
 const ProtectedRoute = () => {
@@ -51,7 +53,9 @@ const DashboardLayout = () => {
                   <span className="rounded bg-indigo-500/20 px-1.5 py-0.5 text-[10px] font-bold text-indigo-400 border border-indigo-500/30">STAFF</span>
                 )}
               </div>
-              <p className="text-xs text-slate-400">Wallet: <span className="text-emerald-400 font-mono">{user?.walletBalance.toLocaleString()}đ</span></p>
+              <Link to="/wallet" className="text-xs text-slate-400 hover:text-white transition">
+                Wallet: <span className={cn("font-mono", (user?.walletBalance || 0) < 0 ? "text-red-400" : "text-emerald-400")}>{(user?.walletBalance || 0).toLocaleString()}đ</span>
+              </Link>
             </div>
             <button onClick={logout} className="rounded bg-red-500/10 px-3 py-1.5 text-sm text-red-400 hover:bg-red-500/20 active:scale-95 transition">Logout</button>
           </div>
@@ -77,6 +81,7 @@ function App() {
               <Route path="/" element={<Catalog />} />
               <Route path="/books/:id" element={<BookDetail />} />
               <Route path="/my-loans" element={<MyLoans />} />
+              <Route path="/wallet" element={<WalletPage />} />
               <Route path="/staff" element={<StaffDashboard />} />
             </Route>
           </Route>

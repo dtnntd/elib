@@ -238,12 +238,17 @@ func GetMyLoans(c *gin.Context) {
 
 
 // ReturnBook handles returning a book (Physical or Digital)
-// For MVP: Physical returns are marked 'RETURNED' (simulating staff action or kiosk)
-// Digital returns are 'RETURNED' immediately (revoking access)
 func ReturnBook(c *gin.Context) {
 	userVal, _ := c.Get("user")
 	user := userVal.(*models.Member)
 	loanID := c.Param("id")
+
+	var req struct {
+		Condition string `json:"condition"` // GOOD, DAMAGED, LOST
+	}
+	if err := c.ShouldBindJSON(&req); err != nil || req.Condition == "" {
+		req.Condition = "GOOD" // Default
+	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
@@ -253,7 +258,17 @@ func ReturnBook(c *gin.Context) {
 
 	// 1. Find Loan & Verify Ownership
 	var loan models.Loan
-	err := loanColl.FindOne(ctx, bson.M{"_id": objID, "memberId": user.ID, "status": bson.M{"$in": []string{"BORROWED", "ACTIVE", "OVERDUE"}}}).Decode(&loan)
+	filter := bson.M{
+		"_id":    objID,
+		"status": bson.M{"$in": []string{"BORROWED", "ACTIVE", "OVERDUE"}},
+	}
+	
+	// If NOT Staff/Admin, ensure they can only return their own books
+	if user.Role != "STAFF" && user.Role != "ADMIN" {
+		filter["memberId"] = user.ID
+	}
+
+	err := loanColl.FindOne(ctx, filter).Decode(&loan)
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "Loan not found or already returned"})
 		return
@@ -261,46 +276,77 @@ func ReturnBook(c *gin.Context) {
 
 	// 2. Helper Update Fields
 	updateFields := bson.M{
-		"status":     "RETURNED",
-		"returnedAt": time.Now(),
+		"status":          "RETURNED",
+		"returnedAt":      time.Now(),
+		"returnCondition": req.Condition,
 	}
 
 	// 3. Handle Physical vs Digital Specifics
+	fine := 0
 	if loan.ItemType == "PHYSICAL" {
-		// For MVP: We assume this API is called by Staff or Self-Check Kiosk (authenticated as user for simplicity now, or we can restricting it).
-		// *Correction*: User requested "Return Ebook". Physical returns usually done at counter.
-		// IF user calls this for PHYSICAL, we might want to block it or allow it as "Self-Return Kiosk" mode.
-		// Let's allow it for now for testing flexibility, but maybe add a note.
 		
-		// Update Physical Copy Status -> AVAILABLE
-		copyColl := config.GetCollection("physical_copies")
-		_, err := copyColl.UpdateOne(ctx, bson.M{"_id": loan.CopyID}, bson.M{"$set": bson.M{"status": "AVAILABLE"}})
-		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update copy status"})
-			return
-		}
-		
-		// Calculate Fine (Mock logic)
+		// 3.1 Calculate Overdue Fine
 		if time.Now().After(loan.DueDate) {
 			daysOverdue := int(time.Since(loan.DueDate).Hours() / 24)
 			if daysOverdue > 0 {
-				updateFields["fineAmount"] = daysOverdue * 5000 // 5k VND per day
+				fine += daysOverdue * 5000 // 5k VND per day
 			}
 		}
-		updateFields["returnCondition"] = "Good" // Default
-		
-	} else {
-		// Digital: Just mark returned (revoked)
-	}
 
+		// 3.2 Handle Condition
+		if req.Condition == "DAMAGED" {
+			fine += 50000 // Flat damage fee
+		} else if req.Condition == "LOST" {
+			// Fetch Book Price
+			var book models.Book
+			config.GetCollection("books").FindOne(ctx, bson.M{"_id": loan.BookID}).Decode(&book)
+			if book.Price > 0 {
+				fine += book.Price
+			} else {
+				fine += 100000 // Default if price missing
+			}
+		}
+
+		updateFields["fineAmount"] = fine
+
+	} else {
+		// Digital: Just mark returned
+	}
+	
 	// 4. Update Loan Record
-	_, err = loanColl.UpdateOne(ctx, bson.M{"_id": objID, "memberId": loan.MemberID, "bookId": loan.BookID, "branchId": loan.BranchID, "borrowedAt": loan.BorrowedAt}, bson.M{"$set": updateFields})
+	_, err = loanColl.UpdateOne(ctx, bson.M{"_id": objID}, bson.M{"$set": updateFields})
 	if err != nil {
+		fmt.Printf("UpdateOne Error: %v\n", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to return book"})
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"message": "Book returned successfully"})
+	// 5. Update Physical Copy Count
+	if loan.ItemType == "PHYSICAL" && req.Condition != "LOST" {
+		config.GetCollection("books").UpdateOne(ctx, bson.M{"_id": loan.BookID}, bson.M{"$inc": bson.M{"availableCopies": 1}})
+	}
+
+	// 6. Process Fine (Deduct Wallet & Log Transaction)
+	if fine > 0 {
+		memberColl := config.GetCollection("members")
+		transColl := config.GetCollection("transactions")
+
+		// Deduct from Wallet
+		memberColl.UpdateOne(ctx, bson.M{"_id": loan.MemberID}, bson.M{"$inc": bson.M{"walletBalance": -fine}})
+
+		// Create Transaction
+		transaction := models.Transaction{
+			ID:          primitive.NewObjectID(),
+			MemberID:    loan.MemberID,
+			Amount:      -fine,
+			Type:        "FINE",
+			Description: fmt.Sprintf("Fine for loan %s (%s)", loanID, req.Condition),
+			CreatedAt:   time.Now(),
+		}
+		transColl.InsertOne(ctx, transaction)
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "Book returned successfully", "fine": fine})
 }
 
 // UpdateReturnAppointment allows user to schedule a return time
@@ -400,31 +446,85 @@ func GetAllLoans(c *gin.Context) {
 
 	status := c.Query("status")
 	filter := bson.M{}
+	limit := 100 // Default limit
+
 	if status != "" {
-		filter["status"] = status
+		if status == "OVERDUE" {
+			// Find loans that are explicitly OVERDUE OR (BORROWED/ACTIVE and DueDate < Now)
+			filter = bson.M{
+				"$or": []bson.M{
+					{"status": "OVERDUE"},
+					{
+						"status":  bson.M{"$in": []string{"BORROWED", "ACTIVE"}},
+						"dueDate": bson.M{"$lt": time.Now()},
+					},
+				},
+			}
+			limit = 1000 // Increase limit significantly for overdue to ensure they are seen
+		} else {
+			filter["status"] = status
+		}
 	}
+
+	// Sort Query
+	sortBy := c.DefaultQuery("sortBy", "borrowedAt")
+	order := c.DefaultQuery("order", "desc")
+	sortDir := -1
+	if order == "asc" {
+		sortDir = 1
+	}
+
+	sortStage := bson.D{{Key: sortBy, Value: sortDir}}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	pipeline := mongo.Pipeline{
-		{{Key: "$match", Value: filter}},
-		{{Key: "$sort", Value: bson.M{"borrowedAt": -1}}}, // Newest first
-		{{Key: "$limit", Value: 100}}, // Limit to last 100 to prevent timeout
-		{{Key: "$lookup", Value: bson.M{
-			"from":         "books",
-			"localField":   "bookId",
-			"foreignField": "_id",
-			"as":           "book",
-		}}},
-		{{Key: "$unwind", Value: "$book"}},
-		{{Key: "$lookup", Value: bson.M{
-			"from":         "members",
-			"localField":   "memberId",
-			"foreignField": "_id",
-			"as":           "member",
-		}}},
-		{{Key: "$unwind", Value: "$member"}},
+	// Optimization: If sorting by native fields, put Sort/Limit BEFORE Lookups
+	// Native fields: borrowedAt, dueDate, status, returnedAt
+	isNativeSort := true
+	if sortBy == "book.title" || sortBy == "member.fullName" {
+		isNativeSort = false
+	}
+	
+	// FIX: For RESERVED loans, borrowedAt is null (end of index).
+	// Using Fast Path (Index Sort) causes a full index scan timeout. 
+	// Force Slow Path (Match -> Lookup) to filter efficiently first.
+	if filter["status"] == "RESERVED" {
+		isNativeSort = false
+	}
+
+	pipeline := mongo.Pipeline{}
+
+	// 1. Match
+	pipeline = append(pipeline, bson.D{{Key: "$match", Value: filter}})
+
+	// 2. Sort & Limit (If Native - FAST PATH)
+	if isNativeSort {
+		pipeline = append(pipeline, bson.D{{Key: "$sort", Value: sortStage}})
+		pipeline = append(pipeline, bson.D{{Key: "$limit", Value: limit}})
+	}
+
+	// 3. Lookups (Expensive)
+	pipeline = append(pipeline, bson.D{{Key: "$lookup", Value: bson.M{
+		"from":         "books",
+		"localField":   "bookId",
+		"foreignField": "_id",
+		"as":           "book",
+	}}})
+	pipeline = append(pipeline, bson.D{{Key: "$unwind", Value: bson.M{"path": "$book", "preserveNullAndEmptyArrays": true}}})
+
+	pipeline = append(pipeline, bson.D{{Key: "$lookup", Value: bson.M{
+		"from":         "members",
+		"localField":   "memberId",
+		"foreignField": "_id",
+		"as":           "member",
+	}}})
+	pipeline = append(pipeline, bson.D{{Key: "$unwind", Value: bson.M{"path": "$member", "preserveNullAndEmptyArrays": true}}})
+
+	// 4. Sort & Limit (If Non-Native - SLOW PATH)
+	if !isNativeSort {
+		pipeline = append(pipeline, bson.D{{Key: "$sort", Value: sortStage}})
+		pipeline = append(pipeline, bson.D{{Key: "$limit", Value: limit}})
 	}
 
 	cursor, err := config.GetCollection("loans").Aggregate(ctx, pipeline)
@@ -447,7 +547,7 @@ func GetAllLoans(c *gin.Context) {
 	loans = []LoanWithMember{}
 
 	if err = cursor.All(ctx, &loans); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Decoding error"})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Error decoding loans"})
 		return
 	}
 
