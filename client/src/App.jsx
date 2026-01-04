@@ -1,6 +1,6 @@
 import { BrowserRouter as Router, Routes, Route, Navigate, Outlet, Link } from 'react-router-dom';
 import { useState, useEffect } from 'react';
-import { BookOpen, Crown, Shield, Star, Users } from 'lucide-react';
+import { BookOpen, Crown, Shield, Star, Users, Package, Library, LayoutDashboard } from 'lucide-react';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import Login from './pages/Login';
 import Register from './pages/Register';
@@ -13,7 +13,12 @@ import StatsDashboard from './pages/StatsDashboard';
 import WalletPage from './pages/WalletPage';
 import UserProfile from './pages/UserProfile';
 import VIPPage from './pages/VIPPage';
+
 import AdminMembersPage from './pages/AdminMembersPage';
+import BookManagementPage from './pages/BookManagementPage';
+
+import PolicyManagementPage from './pages/PolicyManagementPage';
+import { QuotaWidget } from './components/QuotaWidget';
 import { cn } from './lib/utils';
 
 // Protected Route Component
@@ -33,68 +38,77 @@ const DashboardLayout = () => {
 
   return (
     <div className="flex min-h-screen flex-col font-sans">
-      <header className="sticky top-0 z-50 border-b border-slate-200 bg-white/80 p-4 shadow-sm backdrop-blur-xl">
-        <div className="container mx-auto flex items-center justify-between">
-          <Link to="/" className="text-xl font-bold text-slate-800 flex items-center gap-2 hover:opacity-80 transition">
-            <span className="text-cyan-600 text-2xl">⚡</span> E-Library <span className="hidden sm:inline text-xs font-normal text-slate-500">Sharded Cluster</span>
+      <header className="sticky top-0 z-50 border-b border-slate-200 bg-white/80 px-4 py-3 shadow-sm backdrop-blur-xl">
+        <div className="container mx-auto flex items-center gap-4">
+          {/* 1. Logo */}
+          <Link to="/" className="flex shrink-0 items-center gap-2 text-xl font-bold text-slate-800 hover:opacity-80 transition">
+            <span className="text-cyan-600 text-2xl">⚡</span>
+            <span className="hidden md:inline">E-Library</span>
+            <span className="md:hidden">ELib</span>
           </Link>
-          <div className="flex items-center gap-4">
-            {isStaff && (
-              <Link to="/staff" className="flex items-center gap-2 rounded-lg bg-indigo-50 text-indigo-600 px-4 py-2 text-sm font-bold hover:bg-indigo-100 transition border border-indigo-100">
-                Dashboard
-              </Link>
-            )}
-            {isStaff && (
-              <Link to="/stats/dashboard" className="flex items-center gap-2 rounded-lg bg-emerald-50 text-emerald-600 px-3 py-2 text-sm font-bold hover:bg-emerald-100 transition border border-emerald-100">
-                Analytics
-              </Link>
-            )}
-            {isStaff && (
-              <Link to="/admin/members" className="flex items-center gap-2 rounded-lg bg-purple-50 text-purple-600 px-3 py-2 text-sm font-bold hover:bg-purple-100 transition border border-purple-100">
-                <Users className="h-4 w-4" /> Members
-              </Link>
-            )}
-            <Link to="/my-loans" className="flex items-center gap-2 rounded-lg bg-cyan-50 text-cyan-700 px-4 py-2 text-sm font-bold hover:bg-cyan-100 transition border border-cyan-100">
-              <BookOpen className="h-4 w-4" /> My Shelf
-            </Link>
-            <Link to="/vip" className="flex items-center gap-2 rounded-lg bg-gradient-to-r from-purple-500 to-pink-500 text-white px-4 py-2 text-sm font-bold hover:scale-105 transition shadow-md">
-              <Crown className="h-4 w-4" /> VIP
-            </Link>
 
-            <div className="hidden text-right sm:block border-l border-slate-200 pl-4 ml-2">
-              <div className="flex items-center justify-end gap-2">
-                <Link to="/profile" className="text-sm font-bold text-slate-800 hover:text-cyan-600 transition flex items-center gap-2">
+          {/* 2. Navigation */}
+          <nav className="flex items-center gap-1 mr-auto">
+            {isStaff && (
+              <>
+                <Link to="/staff" title="Staff Dashboard" className="flex items-center justify-center rounded-md p-2 text-slate-600 hover:bg-indigo-50 hover:text-indigo-600 transition">
+                  <LayoutDashboard className="h-5 w-5" />
+                </Link>
+                <Link to="/admin/members" className="flex items-center gap-1.5 rounded-md px-3 py-2 text-sm font-semibold text-slate-600 hover:bg-purple-50 hover:text-purple-600 transition whitespace-nowrap">
+                  <Users className="h-4 w-4" /> <span className="hidden xl:inline">Members</span>
+                </Link>
+                <Link to="/admin/books" className="flex items-center gap-1.5 rounded-md px-3 py-2 text-sm font-semibold text-slate-600 hover:bg-orange-50 hover:text-orange-600 transition whitespace-nowrap">
+                  <Library className="h-4 w-4" /> <span className="hidden xl:inline">Books</span>
+                </Link>
+              </>
+            )}
+            {user?.role === 'ADMIN' && (
+              <Link to="/admin/policy" className="flex items-center gap-1.5 rounded-md px-3 py-2 text-sm font-semibold text-slate-600 hover:bg-red-50 hover:text-red-600 transition whitespace-nowrap">
+                <Shield className="h-4 w-4" /> <span className="hidden xl:inline">Policy</span>
+              </Link>
+            )}
+
+            <Link to="/my-loans" title="My Shelf" className="flex items-center justify-center rounded-md p-2 text-slate-600 hover:bg-cyan-50 hover:text-cyan-600 transition">
+              <BookOpen className="h-5 w-5" />
+            </Link>
+            <Link to="/vip" className="flex items-center gap-1.5 rounded-full bg-gradient-to-r from-purple-500 to-pink-500 px-4 py-1.5 text-xs font-bold text-white shadow hover:shadow-md hover:scale-105 transition whitespace-nowrap ml-2">
+              <Crown className="h-3.5 w-3.5" /> VIP
+            </Link>
+          </nav>
+
+          {/* 3. User Actions (Right Aligned) */}
+          <div className="flex items-center gap-4 shrink-0 bg-white pl-2">
+            {/* Quota Widget (Desktop only) */}
+            <div className="hidden lg:block">
+              <QuotaWidget />
+            </div>
+
+            {/* User Info Compact */}
+            <div className="hidden sm:flex flex-col items-end text-right leading-tight">
+              <div className="flex items-center gap-2">
+                <Link to="/profile" className="text-sm font-bold text-slate-800 hover:text-cyan-600 transition truncate max-w-[150px]">
                   {user?.fullName}
                 </Link>
-                {user?.role === 'ADMIN' && (
-                  <span className="inline-flex items-center gap-1 rounded-full bg-yellow-100 px-2 py-0.5 text-[10px] font-extrabold text-yellow-700 border border-yellow-200">
-                    <Crown className="h-3 w-3" /> ADMIN
-                  </span>
-                )}
-                {user?.role === 'STAFF' && (
-                  <span className="inline-flex items-center gap-1 rounded-full bg-blue-100 px-2 py-0.5 text-[10px] font-extrabold text-blue-700 border border-blue-200">
-                    <Shield className="h-3 w-3" /> STAFF
-                  </span>
-                )}
-                {user?.isVip && user?.role !== 'ADMIN' && user?.role !== 'STAFF' && (
-                  <span className="inline-flex items-center gap-1 rounded-full bg-purple-100 px-2 py-0.5 text-[10px] font-extrabold text-purple-700 border border-purple-200">
-                    <Star className="h-3 w-3" /> VIP
-                  </span>
-                )}
+                {/* Role Badge */}
+                {user?.role === 'ADMIN' && <span className="rounded bg-yellow-100 px-1.5 py-0.5 text-[10px] font-bold text-yellow-700 border border-yellow-200">ADMIN</span>}
+                {user?.role === 'STAFF' && <span className="rounded bg-blue-100 px-1.5 py-0.5 text-[10px] font-bold text-blue-700 border border-blue-200">STAFF</span>}
+                {user?.isVip && <span className="rounded bg-purple-100 px-1.5 py-0.5 text-[10px] font-bold text-purple-700 border border-purple-200">VIP</span>}
+
               </div>
-              <div className="flex items-center justify-end gap-3 mt-0.5">
-                <Link to="/wallet" className="text-xs text-slate-500 hover:text-slate-800 transition">
-                  Wallet: <span className={cn("font-mono font-bold", (user?.walletBalance || 0) < 0 ? "text-red-500" : "text-emerald-600")}>{(user?.walletBalance || 0).toLocaleString()}đ</span>
+              <div className="flex items-center gap-2 text-xs text-slate-500">
+                <Link to="/wallet" className={cn("font-mono hover:underline", (user?.walletBalance || 0) < 0 ? "text-red-500" : "text-emerald-600")}>
+                  {(user?.walletBalance || 0).toLocaleString()}đ
                 </Link>
                 <span className="text-slate-300">|</span>
-                <p className="text-xs text-slate-500 flex items-center gap-1">
-                  Branch: <span className="text-slate-700 font-semibold">{
-                    { 'HN': 'Hanoi', 'HP': 'Haiphong', 'DN': 'Danang' }[user?.branchId] || user?.branchId
-                  }</span>
-                </p>
+                <span>{{ 'HN': 'Hanoi', 'HP': 'Haiphong', 'DN': 'Danang' }[user?.branchId] || user?.branchId}</span>
               </div>
             </div>
-            <button onClick={logout} className="rounded-lg bg-rose-50 px-3 py-2 text-sm font-medium text-rose-600 hover:bg-rose-100 transition border border-rose-100">Logout</button>
+
+            <div className="w-px h-8 bg-slate-200 hidden sm:block"></div>
+
+            <button onClick={logout} className="rounded-lg bg-slate-50 px-3 py-2 text-sm font-medium text-slate-600 hover:bg-rose-50 hover:text-rose-600 transition border border-slate-200">
+              Logout
+            </button>
           </div>
         </div>
       </header>
@@ -123,6 +137,9 @@ function App() {
               <Route path="/staff" element={<StaffDashboard />} />
               <Route path="/stats/dashboard" element={<StatsDashboard />} />
               <Route path="/admin/members" element={<AdminMembersPage />} />
+              <Route path="/admin/books" element={<BookManagementPage />} />
+              <Route path="/admin/policy" element={<PolicyManagementPage />} />
+
               <Route path="/profile" element={<UserProfile />} />
             </Route>
           </Route>

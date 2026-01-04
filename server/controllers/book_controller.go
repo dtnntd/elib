@@ -12,8 +12,15 @@ import (
 	"github.com/gin-gonic/gin"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
-	"go.mongodb.org/mongo-driver/mongo/options"
+	"go.mongodb.org/mongo-driver/mongo"
 )
+
+// Custom Book Struct for List View with License Info
+type BookWithLicense struct {
+	models.Book `bson:",inline"`
+	HasDigital  bool   `json:"hasDigital" bson:"hasDigital"`
+	AccessModel string `json:"accessModel" bson:"accessModel"`
+}
 
 func GetBooks(c *gin.Context) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -30,56 +37,93 @@ func GetBooks(c *gin.Context) {
 	language := c.Query("language")
 	yearStr := c.Query("year")
 
-	filter := bson.M{}
+	matchStage := bson.M{}
 	
 	// Basic Search Logic (Regex)
 	if search != "" {
-		filter["$or"] = []bson.M{
+		matchStage["$or"] = []bson.M{
 			{"title": bson.M{"$regex": search, "$options": "i"}},
 			{"authors": bson.M{"$regex": search, "$options": "i"}},
 		}
 	}
 	if subject != "" {
-		filter["subjects"] = subject
+		matchStage["subjects"] = subject
 	}
 	if author != "" {
-		// If using regex for partial match
-		filter["authors"] = bson.M{"$regex": author, "$options": "i"}
+		matchStage["authors"] = bson.M{"$regex": author, "$options": "i"}
 	}
 	if language != "" {
-		filter["lang"] = language
+		matchStage["lang"] = language
 	}
 	if yearStr != "" {
 		year, err := strconv.Atoi(yearStr)
 		if err == nil {
-			filter["publishedYear"] = year
+			matchStage["publishedYear"] = year
 		}
 	}
 
-	opts := options.Find().SetSkip(int64((page - 1) * limit)).SetLimit(int64(limit))
+	pipeline := mongo.Pipeline{
+		bson.D{{Key: "$match", Value: matchStage}},
+		bson.D{{Key: "$lookup", Value: bson.M{
+			"from":         "digital_licenses",
+			"localField":   "_id",
+			"foreignField": "bookId",
+			"as":           "license",
+		}}},
+		bson.D{{Key: "$addFields", Value: bson.M{
+			"hasDigital": bson.M{"$gt": []interface{}{bson.M{"$size": "$license"}, 0}},
+			"accessModel": bson.M{"$arrayElemAt": []interface{}{"$license.accessModel", 0}},
+		}}},
+		bson.D{{Key: "$project", Value: bson.M{"license": 0}}}, 
+		bson.D{{Key: "$facet", Value: bson.M{
+			"metadata": []bson.M{
+				{"$count": "total"},
+			},
+			"data": []bson.M{
+				{"$skip": int64((page - 1) * limit)},
+				{"$limit": int64(limit)},
+			},
+		}}},
+	}
 
-	cursor, err := collection.Find(ctx, filter, opts)
+	cursor, err := collection.Aggregate(ctx, pipeline)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Error fetching books"})
 		return
 	}
 	defer cursor.Close(ctx)
 
-	books := []models.Book{}
-	if err = cursor.All(ctx, &books); err != nil {
+	var result []struct {
+		Metadata []struct {
+			Total int `bson:"total"`
+		} `bson:"metadata"`
+		Data []BookWithLicense `bson:"data"`
+	}
+
+	if err = cursor.All(ctx, &result); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Error decoding books"})
 		return
 	}
 
-	total, _ := collection.CountDocuments(ctx, filter)
+	books := []BookWithLicense{}
+	total := 0
+
+	if len(result) > 0 {
+		if len(result[0].Data) > 0 {
+			books = result[0].Data
+		}
+		if len(result[0].Metadata) > 0 {
+			total = result[0].Metadata[0].Total
+		}
+	}
 
 	c.JSON(http.StatusOK, gin.H{
 		"data": books,
 		"meta": gin.H{
-			"total":       total,
-			"userPage":    page,
-			"limit":       limit,
-			"totalPages":  int(math.Ceil(float64(total) / float64(limit))),
+			"total":      total,
+			"userPage":   page,
+			"limit":      limit,
+			"totalPages": int(math.Ceil(float64(total) / float64(limit))),
 		},
 	})
 }
@@ -112,11 +156,74 @@ func GetBook(c *gin.Context) {
 	licColl := config.GetCollection("digital_licenses")
 	hasEbookCount, _ := licColl.CountDocuments(ctx, bson.M{"bookId": objID})
 
+	// 4. Branch Inventory Aggregation
+	branchPipeline := mongo.Pipeline{
+		{{Key: "$match", Value: bson.M{"bookId": objID}}},
+		{{Key: "$group", Value: bson.M{
+			"_id": "$branchId",
+			"total": bson.M{"$sum": 1},
+			"available": bson.M{"$sum": bson.M{
+				"$cond": []interface{}{
+					bson.M{"$eq": []string{"$status", "AVAILABLE"}},
+					1,
+					0,
+				},
+			}},
+		}}},
+	}
+	
+	cursor, _ := copyColl.Aggregate(ctx, branchPipeline)
+	var branchStats []struct {
+		BranchID  string `bson:"_id" json:"branchId"`
+		Available int    `bson:"available" json:"available"`
+		Total     int    `bson:"total" json:"total"`
+	}
+	cursor.All(ctx, &branchStats)
+
+	// 5. Digital License Details
+	var digitalLicense struct {
+		AccessModel     string `json:"accessModel"`
+		ConcurrentLimit int    `json:"concurrentLimit"`
+		ActiveLoans     int    `json:"activeLoans"`
+	}
+	
+	// Fetch License
+	var licenseDoc struct {
+		AccessModel     string `bson:"accessModel"`
+		ConcurrentLimit int    `bson:"concurrentLimit"`
+	}
+	err = licColl.FindOne(ctx, bson.M{"bookId": objID}).Decode(&licenseDoc)
+	
+	if err == nil {
+		digitalLicense.AccessModel = licenseDoc.AccessModel
+		digitalLicense.ConcurrentLimit = licenseDoc.ConcurrentLimit
+		
+		// If OCOU, Count Active Loans
+		if licenseDoc.AccessModel == "OCOU" {
+			loanColl := config.GetCollection("loans")
+			activeCount, _ := loanColl.CountDocuments(ctx, bson.M{
+				"bookId": objID,
+				"itemType": "DIGITAL",
+				"status": bson.M{"$in": []string{"BORROWED", "ACTIVE"}},
+			})
+			digitalLicense.ActiveLoans = int(activeCount)
+		}
+	} else {
+		// No License
+		digitalLicense.AccessModel = "NONE"
+	}
+
 	detail := models.BookDetail{
 		Book:            book,
 		TotalCopies:     int(totalCopies),
 		AvailableCopies: int(availCopies),
 		HasEbook:        hasEbookCount > 0,
+		BranchInventory: []struct {
+			BranchID  string `json:"branchId"`
+			Available int    `json:"available"`
+			Total     int    `json:"total"`
+		}(branchStats),
+		DigitalLicense: digitalLicense,
 	}
 
 	c.JSON(http.StatusOK, detail)

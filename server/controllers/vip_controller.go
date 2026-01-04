@@ -13,6 +13,7 @@ import (
 	"go.mongodb.org/mongo-driver/bson/primitive"
 )
 
+
 type VIPPackage struct {
 	ID       string `json:"id"`
 	Name     string `json:"name"`
@@ -29,6 +30,22 @@ var vipPackages = []VIPPackage{
 }
 
 func GetVIPPackages(c *gin.Context) {
+	// Try to fetch from System Config first
+	var configDoc models.SystemConfig
+	err := config.GetCollection("system_config").FindOne(context.TODO(), bson.M{"key": "VIP_PACKAGES"}).Decode(&configDoc)
+	
+	if err == nil {
+		// Parse Value
+		if pkgBytes, err := bson.Marshal(configDoc.Value); err == nil {
+			var pkgVal models.VIPPackagesValue
+			if err := bson.Unmarshal(pkgBytes, &pkgVal); err == nil && len(pkgVal.Packages) > 0 {
+				c.JSON(http.StatusOK, gin.H{"packages": pkgVal.Packages})
+				return
+			}
+		}
+	}
+
+	// Fallback to hardcoded
 	c.JSON(http.StatusOK, gin.H{
 		"packages": vipPackages,
 	})
@@ -74,9 +91,38 @@ func PurchaseVIP(c *gin.Context) {
 		return
 	}
 
+	// Determine source of packages
+	var availablePackages []VIPPackage
+
+	// Try DB
+	var configDoc models.SystemConfig
+	err := config.GetCollection("system_config").FindOne(context.TODO(), bson.M{"key": "VIP_PACKAGES"}).Decode(&configDoc)
+	if err == nil {
+		if pkgBytes, err := bson.Marshal(configDoc.Value); err == nil {
+			var pkgVal models.VIPPackagesValue
+			if err := bson.Unmarshal(pkgBytes, &pkgVal); err == nil && len(pkgVal.Packages) > 0 {
+				// Convert models.VIPPackageConfig to local VIPPackage
+				for _, p := range pkgVal.Packages {
+					availablePackages = append(availablePackages, VIPPackage{
+						ID:       p.ID,
+						Name:     p.Name,
+						Duration: p.Duration,
+						Price:    p.Price,
+						Discount: p.Discount,
+					})
+				}
+			}
+		}
+	}
+
+	// Fallback
+	if len(availablePackages) == 0 {
+		availablePackages = vipPackages
+	}
+
 	// Find package
 	var selectedPackage *VIPPackage
-	for _, pkg := range vipPackages {
+	for _, pkg := range availablePackages {
 		if pkg.ID == req.PackageID {
 			selectedPackage = &pkg
 			break
@@ -90,7 +136,7 @@ func PurchaseVIP(c *gin.Context) {
 
 	// Get member
 	var member models.Member
-	err := config.GetCollection("members").FindOne(context.TODO(), bson.M{"_id": objID}).Decode(&member)
+	err = config.GetCollection("members").FindOne(context.TODO(), bson.M{"_id": objID}).Decode(&member)
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "Member not found"})
 		return

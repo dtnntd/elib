@@ -1,5 +1,7 @@
 package main
 
+// Force rebuild 7439
+// Fixed BorrowBook duplication
 import (
 	"elibrary-api/config"
 	"elibrary-api/controllers"
@@ -49,8 +51,10 @@ func main() {
 		{
 			loans.POST("/borrow", controllers.BorrowBook)
 			loans.GET("/my-loans", controllers.GetMyLoans)
+			loans.GET("/my-quota", controllers.GetMyQuota)
 			loans.PUT("/return/:id", controllers.ReturnBook)
 			loans.PUT("/schedule-return/:id", controllers.UpdateReturnAppointment)
+			loans.PUT("/renew/:id", controllers.RenewLoan)
 			
 			// Staff Routes
 			loans.GET("/all", controllers.GetAllLoans)
@@ -94,6 +98,28 @@ func main() {
 		admin.POST("/promote-role/:memberId", controllers.PromoteRole) // Admin only
 		admin.DELETE("/revoke-vip/:memberId", controllers.RevokeVIP)   // Admin/Staff
 		admin.POST("/downgrade-role/:memberId", controllers.DowngradeRole) // Admin only
+		admin.POST("/assign-branch/:memberId", controllers.AssignBranch)   // Admin only
+		// Book Management
+		admin.POST("/books", controllers.AddBook)                     // Admin only
+		admin.GET("/books/:id/physical-copies", controllers.GetBookPhysicalCopies) // NEW
+		admin.PUT("/physical-copies/:id", controllers.UpdatePhysicalCopy) // NEW
+		admin.GET("/books/:id/license", controllers.GetBookLicense)   // Admin only
+		admin.PUT("/books/:id", controllers.UpdateBook)               // Admin only
+		admin.DELETE("/books/:id", controllers.DeleteBook)            // Admin only
+		admin.POST("/inventory", controllers.AddInventory)            // Admin only
+		admin.GET("/inventory", controllers.GetInventory)             // Admin/Staff
+		
+		// Policy Management
+		admin.GET("/policy", controllers.GetPolicy)                   // Admin only
+		admin.PUT("/policy", controllers.UpdatePolicy)                // Admin only
+	}
+
+	// Staff Routes
+	staff := api.Group("/staff")
+	staff.Use(middleware.AuthMiddleware())
+	{
+		staff.PUT("/inventory/:bookId", controllers.UpdateInventory)  // Staff only
+		staff.GET("/inventory", controllers.GetInventory)       // Staff only
 	}
 
 	r.Run(":8081")

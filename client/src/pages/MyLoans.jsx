@@ -1,14 +1,13 @@
 import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import api from '../api/axios';
-import { Loader2, Book, Calendar, Clock, RotateCcw } from 'lucide-react';
+import { Loader2, Book, Calendar, Clock, RotateCcw, CalendarClock } from 'lucide-react';
 import { cn } from '../lib/utils';
 
 const BRANCH_NAMES = {
     "HN": "Hà Nội Main Branch",
     "HP": "Hải Phòng Branch",
     "DN": "Đà Nẵng Branch",
-    "HCM": "TP.HCM Branch"
 };
 
 export default function MyLoans() {
@@ -16,6 +15,7 @@ export default function MyLoans() {
     const [loading, setLoading] = useState(true);
     const [activeScheduleId, setActiveScheduleId] = useState(null);
     const [scheduleTime, setScheduleTime] = useState('');
+    const [showAllHistory, setShowAllHistory] = useState(false);
 
     useEffect(() => {
         const fetchLoans = async () => {
@@ -46,6 +46,18 @@ export default function MyLoans() {
         }
     };
 
+    const handleRenew = async (loanId, bookTitle) => {
+        if (!confirm(`Renew due date for book "${bookTitle}"? \nExtends 14 days from NOW.`)) return;
+        try {
+            await api.put(`/loans/renew/${loanId}`);
+            alert("Renewed successfully!");
+            const res = await api.get('/loans/my-loans');
+            setLoans(res.data);
+        } catch (error) {
+            alert(`Failed to renew: ${error.response?.data?.error || error.message}`);
+        }
+    };
+
     const handleScheduleReturn = async (loanId) => {
         if (!scheduleTime) return alert("Please select a time");
         try {
@@ -63,7 +75,7 @@ export default function MyLoans() {
     };
 
     // Filter Active vs Returned
-    const activeLoans = loans.filter(l => l.status === "BORROWED" || l.status === "ACTIVE" || l.status === "OVERDUE");
+    const activeLoans = loans.filter(l => l.status === "BORROWED" || l.status === "ACTIVE" || l.status === "OVERDUE" || l.status === "RESERVED");
     const returnedLoans = loans.filter(l => l.status === "RETURNED");
 
     return (
@@ -106,7 +118,12 @@ export default function MyLoans() {
                                                 <Calendar className="h-3 w-3 text-slate-400" /> Due: <span className="text-slate-900 font-bold">{new Date(loan.dueDate).toLocaleDateString()}</span>
                                             </span>
                                             <span className="flex items-center gap-1">
-                                                <Book className="h-3 w-3 text-slate-400" /> Type: <span className={loan.itemType === "PHYSICAL" ? "text-cyan-700 font-bold" : "text-purple-700 font-bold"}>{loan.itemType === "PHYSICAL" ? "Physical Copy" : "E-Book"}</span>
+                                                <Book className="h-3 w-3 text-slate-400" /> Type:
+                                                <span className={loan.itemType === "PHYSICAL" ? "text-cyan-700 font-bold" : "text-purple-700 font-bold"}>
+                                                    {loan.itemType === "PHYSICAL"
+                                                        ? "Physical Copy"
+                                                        : `E-Book (${loan.accessModel || 'Unlimited'})`}
+                                                </span>
                                             </span>
                                             {loan.itemType === "PHYSICAL" && (
                                                 <span className="flex items-center gap-1">
@@ -164,7 +181,13 @@ export default function MyLoans() {
                                                     </div>
                                                 ) : (
                                                     <div className="flex flex-col items-end gap-1">
-                                                        {loan.returnAppointment ? (
+                                                        <button
+                                                            onClick={() => handleRenew(loan.id, loan.book?.title || "Unknown")}
+                                                            className="text-xs text-blue-600 hover:text-blue-800 font-bold flex items-center gap-1 mb-1"
+                                                        >
+                                                            <CalendarClock className="h-3 w-3" /> Renew
+                                                        </button>
+                                                        {loan.returnAppointment && new Date(loan.returnAppointment).getFullYear() > 2000 ? (
                                                             <div className="text-xs text-slate-500 font-medium">
                                                                 Return scheduled: <br />{new Date(loan.returnAppointment).toLocaleString()}
                                                             </div>
@@ -203,10 +226,13 @@ export default function MyLoans() {
             </div>
 
             {/* History */}
-            <div className="space-y-4 pt-6 border-t border-slate-200">
-                <h3 className="text-lg font-bold text-slate-700 uppercase tracking-wide text-xs">History</h3>
+            <div className="space-y-4 pt-6 border-t border-slate-200 pb-12">
+                <div className="flex items-center justify-between">
+                    <h3 className="text-lg font-bold text-slate-700 uppercase tracking-wide text-xs">History ({returnedLoans.length})</h3>
+                </div>
+
                 <div className="grid gap-2">
-                    {returnedLoans.slice(0, 5).map(loan => ( // Show last 5
+                    {returnedLoans.slice(0, showAllHistory ? undefined : 5).map(loan => (
                         <div key={loan.id} className="flex flex-col sm:flex-row sm:items-center justify-between p-4 rounded-lg bg-white border border-slate-200 hover:bg-slate-50 transition gap-4 shadow-sm">
                             <div className="flex items-start gap-4">
                                 <div className="mt-1">
@@ -241,6 +267,17 @@ export default function MyLoans() {
                         </div>
                     ))}
                 </div>
+
+                {returnedLoans.length > 5 && (
+                    <div className="text-center pt-2">
+                        <button
+                            onClick={() => setShowAllHistory(!showAllHistory)}
+                            className="text-sm font-bold text-cyan-600 hover:text-cyan-800 hover:underline transition"
+                        >
+                            {showAllHistory ? "Show Less" : `View All History (${returnedLoans.length - 5} more)`}
+                        </button>
+                    </div>
+                )}
             </div>
         </div>
     );

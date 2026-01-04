@@ -115,6 +115,30 @@ export default function BookDetail() {
                                     {book.availableCopies} available out of {book.totalCopies} copies across branches.
                                 </p>
 
+                                {/* Branch Breakdown */}
+                                {book.branchInventory && book.branchInventory.length > 0 && (
+                                    <div className="mb-4 space-y-2">
+                                        <div className="grid grid-cols-3 text-xs font-semibold text-slate-500 uppercase border-b border-slate-200 pb-1 mb-1">
+                                            <span>Branch</span>
+                                            <span className="text-center">Avail</span>
+                                            <span className="text-right">Status</span>
+                                        </div>
+                                        {book.branchInventory.map(branch => (
+                                            <div key={branch.branchId} className="grid grid-cols-3 text-xs items-center">
+                                                <span className="text-slate-700 font-medium">{branch.branchId}</span>
+                                                <span className="text-center font-mono">{branch.available}/{branch.total}</span>
+                                                <div className="text-right">
+                                                    {branch.available > 0 ? (
+                                                        <span className="text-emerald-700 font-bold bg-emerald-100 px-1.5 py-0.5 rounded">In Stock</span>
+                                                    ) : (
+                                                        <span className="text-red-700 font-bold bg-red-100 px-1.5 py-0.5 rounded">Out</span>
+                                                    )}
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
+
                                 <div className="mb-3">
                                     <label className="block text-xs font-medium text-slate-700 mb-1">Pickup Appointment</label>
                                     <input
@@ -148,9 +172,45 @@ export default function BookDetail() {
                                 <p className="text-sm text-slate-600 mb-4">
                                     {book.hasEbook ? "Read instantly on your device." : "Digital version not available."}
                                 </p>
+
+                                {book.hasEbook && book.digitalLicense && (
+                                    <div className="mb-4">
+                                        <div className="flex flex-wrap gap-2 mb-2">
+                                            <span className={`inline-flex items-center px-2 py-1 rounded text-xs font-bold ${book.digitalLicense.accessModel === 'UNLIMITED'
+                                                ? 'bg-purple-100 text-purple-700'
+                                                : 'bg-orange-100 text-orange-700'
+                                                }`}>
+                                                {book.digitalLicense.accessModel === 'UNLIMITED' ? 'Unlimited License' : 'Limited License (OCOU)'}
+                                            </span>
+                                        </div>
+
+                                        {book.digitalLicense.accessModel === 'OCOU' && (
+                                            <div className="space-y-1">
+                                                <div className="flex justify-between text-xs font-medium text-slate-600">
+                                                    <span>Availability</span>
+                                                    <span className={book.digitalLicense.activeLoans >= book.digitalLicense.concurrentLimit ? "text-red-600 font-bold" : "text-emerald-600 font-bold"}>
+                                                        {Math.max(0, book.digitalLicense.concurrentLimit - book.digitalLicense.activeLoans)} / {book.digitalLicense.concurrentLimit}
+                                                    </span>
+                                                </div>
+                                                <div className="h-1.5 w-full bg-slate-200 rounded-full overflow-hidden">
+                                                    <div
+                                                        className={`h-full rounded-full ${book.digitalLicense.activeLoans >= book.digitalLicense.concurrentLimit ? 'bg-red-500' : 'bg-emerald-500'
+                                                            }`}
+                                                        style={{ width: `${Math.min(100, (book.digitalLicense.activeLoans / book.digitalLicense.concurrentLimit) * 100)}%` }}
+                                                    />
+                                                </div>
+                                                {book.digitalLicense.activeLoans >= book.digitalLicense.concurrentLimit && (
+                                                    <p className="text-[10px] text-red-500 font-medium mt-1">
+                                                        ⚠️ All digital copies are currently in use.
+                                                    </p>
+                                                )}
+                                            </div>
+                                        )}
+                                    </div>
+                                )}
                                 <button
                                     onClick={() => handleBorrow("DIGITAL")}
-                                    disabled={!book.hasEbook}
+                                    disabled={!book.hasEbook || (book.digitalLicense?.accessModel === 'OCOU' && book.digitalLicense?.activeLoans >= book.digitalLicense?.concurrentLimit)}
                                     className="w-full rounded-lg bg-purple-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-purple-500 disabled:opacity-50 disabled:cursor-not-allowed"
                                 >
                                     {book.hasEbook ? "Borrow E-Book" : "Not Available"}
@@ -161,6 +221,7 @@ export default function BookDetail() {
                     </div>
                 </div>
             </div>
+
         </div>
     );
 }

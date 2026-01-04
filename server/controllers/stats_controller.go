@@ -233,7 +233,7 @@ func GetBranchCirculationStats(c *gin.Context) {
 			"foreignField": "_id",
 			"as":           "book",
 		}}},
-		{{Key: "$unwind", Value: "$book"}},
+		{{Key: "$unwind", Value: bson.M{"path": "$book", "preserveNullAndEmptyArrays": true}}},
 		// Join Member for Name
 		{{Key: "$lookup", Value: bson.M{
 			"from":         "members",
@@ -241,14 +241,14 @@ func GetBranchCirculationStats(c *gin.Context) {
 			"foreignField": "_id",
 			"as":           "member",
 		}}},
-		{{Key: "$unwind", Value: "$member"}},
+		{{Key: "$unwind", Value: bson.M{"path": "$member", "preserveNullAndEmptyArrays": true}}},
 		// Project
 		{{Key: "$project", Value: bson.M{
 			"id":           "$_id",
-			"bookTitle":    "$book.title",
+			"bookTitle":    bson.M{"$ifNull": []interface{}{"$book.title", "Unknown / Deleted Book"}},
 			"bookId":       "$book._id",
 			"copyId":       1,
-			"memberName":   "$member.fullName",
+			"memberName":   bson.M{"$ifNull": []interface{}{"$member.fullName", "Unknown User"}},
 			"memberEmail":  "$member.email",
 			"borrowedAt":   1,
 			"dueDate":      1,

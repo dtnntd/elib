@@ -24,4 +24,17 @@ type BookDetail struct {
 	AvailableCopies int  `json:"availableCopies"`
 	TotalCopies     int  `json:"totalCopies"`
 	HasEbook        bool `json:"hasEbook"`
+	
+	// Breakdown
+	BranchInventory []struct {
+		BranchID  string `json:"branchId"`
+		Available int    `json:"available"`
+		Total     int    `json:"total"`
+	} `json:"branchInventory"`
+
+	DigitalLicense struct {
+		AccessModel     string `json:"accessModel"`     // UNLIMITED, OCOU
+		ConcurrentLimit int    `json:"concurrentLimit"` // For OCOU
+		ActiveLoans     int    `json:"activeLoans"`     // For OCOU
+	} `json:"digitalLicense"`
 }

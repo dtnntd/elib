@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import api from '../api/axios';
-import { Loader2, CheckCircle, RotateCcw, Monitor, BarChart3, List, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Loader2, CheckCircle, RotateCcw, Monitor, BarChart3, List, ChevronLeft, ChevronRight, CalendarClock } from 'lucide-react';
 import StatsDashboard from './StatsDashboard';
 import { cn } from '../lib/utils';
 
@@ -36,7 +36,7 @@ export default function StaffDashboard() {
     };
 
     useEffect(() => {
-        const status = filter === 'OVERDUE' ? 'OVERDUE' : filter === 'ALL' ? undefined : filter;
+        const status = filter === 'ALL' ? undefined : filter;
         fetchLoans(status);
 
         const interval = setInterval(() => {
@@ -105,9 +105,10 @@ export default function StaffDashboard() {
 
     const filteredLoans = loans.filter(loan => {
         if (filter === 'ALL') return true;
-        if (filter === 'OVERDUE') return true; // Already filtered by server
         if (filter === 'RETURNED') return loan.status === 'RETURNED';
-        if (filter === 'BORROWED') return (loan.status === 'BORROWED' || loan.status === 'ACTIVE') && !isLoanOverdue(loan);
+        if (filter === 'SCHEDULED') return loan.returnAppointment && loan.status !== 'RETURNED';
+        if (filter === 'CURRENT') return ['BORROWED', 'ACTIVE', 'OVERDUE'].includes(loan.status);
+        if (filter === 'OVERDUE') return isLoanOverdue(loan);
         return loan.status === filter;
     });
 
@@ -156,10 +157,22 @@ export default function StaffDashboard() {
 
                 {viewMode === 'LOANS' && (
                     <div className="flex gap-2 bg-white p-1 rounded-lg border border-slate-200 shadow-sm">
-                        {['ALL', 'RESERVED', 'BORROWED', 'OVERDUE', 'RETURNED'].map(f => (
+                        {['ALL', 'RESERVED', 'CURRENT', 'SCHEDULED', 'OVERDUE', 'RETURNED'].map(f => (
                             <button
                                 key={f}
-                                onClick={() => setFilter(f)}
+                                onClick={() => {
+                                    setFilter(f);
+                                    if (f === 'RETURNED') {
+                                        setSortConfig({ key: 'returnedAt', direction: 'desc' });
+                                    } else if (f === 'SCHEDULED') {
+                                        setSortConfig({ key: 'returnAppointment', direction: 'asc' });
+                                    } else if (f === 'RESERVED') {
+                                        setSortConfig({ key: 'pickupAppointment', direction: 'asc' });
+                                    } else {
+                                        setSortConfig({ key: 'borrowedAt', direction: 'desc' });
+                                    }
+                                    setCurrentPage(1);
+                                }}
                                 className={cn(
                                     "px-3 py-1.5 rounded-lg text-xs font-bold transition",
                                     filter === f
@@ -167,7 +180,7 @@ export default function StaffDashboard() {
                                         : "text-slate-500 hover:text-slate-900 hover:bg-slate-50"
                                 )}
                             >
-                                {f}
+                                {f === 'SCHEDULED' ? 'RETURNS' : f === 'CURRENT' ? 'BORROWED' : f}
                             </button>
                         ))}
                     </div>
@@ -219,12 +232,14 @@ export default function StaffDashboard() {
                                                     Pickup: {new Date(loan.pickupAppointment).toLocaleString()}
                                                 </div>
                                             )}
-                                            {(loan.status === 'BORROWED' || loan.status === 'ACTIVE') && (
+                                            {['BORROWED', 'ACTIVE', 'OVERDUE'].includes(loan.status) && (
                                                 <>
-                                                    <div className="font-medium text-slate-700">Due: {new Date(loan.dueDate).toLocaleDateString()}</div>
-                                                    {loan.returnAppointment && (
-                                                        <div className="text-cyan-600 mt-1 text-xs font-bold">
-                                                            Return Appt: {new Date(loan.returnAppointment).toLocaleString()}
+                                                    <div className={cn("font-medium", isLoanOverdue(loan) ? "text-red-600 font-bold" : "text-slate-700")}>
+                                                        Due: {new Date(loan.dueDate).toLocaleDateString()}
+                                                    </div>
+                                                    {loan.returnAppointment && !loan.returnAppointment.startsWith("0001") && (
+                                                        <div className="text-emerald-600 mt-1 text-xs font-bold bg-emerald-50 px-1 py-0.5 rounded border border-emerald-100 inline-block">
+                                                            📅 Returns: {new Date(loan.returnAppointment).toLocaleString()}
                                                         </div>
                                                     )}
                                                 </>
@@ -245,13 +260,30 @@ export default function StaffDashboard() {
                                                         <CheckCircle className="h-4 w-4" /> Checkout
                                                     </button>
                                                 )}
-                                                {(loan.status === 'BORROWED' || loan.status === 'OVERDUE') && loan.itemType === 'PHYSICAL' && (
-                                                    <button
-                                                        onClick={() => handleReturnClick(loan)}
-                                                        className="inline-flex items-center gap-1 rounded-md bg-purple-100 px-3 py-1.5 text-xs font-bold text-purple-700 ring-1 ring-inset ring-purple-200 hover:bg-purple-200 transition"
-                                                    >
-                                                        <RotateCcw className="h-4 w-4" /> Return
-                                                    </button>
+                                                {(loan.status === 'BORROWED' || loan.status === 'OVERDUE' || loan.status === 'ACTIVE') && (
+                                                    <>
+                                                        <button
+                                                            onClick={async () => {
+                                                                if (!confirm(`Renew due date for book "${loan.book.title}"? \nExtends 14 days from NOW.`)) return;
+                                                                try {
+                                                                    await api.put(`/loans/renew/${loan.id}`);
+                                                                    alert("Renewed successfully!");
+                                                                    fetchLoans(filter === 'OVERDUE' ? 'OVERDUE' : undefined);
+                                                                } catch (err) {
+                                                                    alert("Failed to renew: " + (err.response?.data?.error || err.message));
+                                                                }
+                                                            }}
+                                                            className="inline-flex items-center gap-1 rounded-md bg-blue-100 px-3 py-1.5 text-xs font-bold text-blue-700 ring-1 ring-inset ring-blue-200 hover:bg-blue-200 transition"
+                                                        >
+                                                            <CalendarClock className="h-4 w-4" /> Renew
+                                                        </button>
+                                                        <button
+                                                            onClick={() => handleReturnClick(loan)}
+                                                            className="inline-flex items-center gap-1 rounded-md bg-purple-100 px-3 py-1.5 text-xs font-bold text-purple-700 ring-1 ring-inset ring-purple-200 hover:bg-purple-200 transition"
+                                                        >
+                                                            <RotateCcw className="h-4 w-4" /> Return
+                                                        </button>
+                                                    </>
                                                 )}
                                             </div>
                                         </td>

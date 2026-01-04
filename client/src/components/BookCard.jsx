@@ -35,6 +35,16 @@ export function BookCard({ book }) {
                     <span className="inline-flex rounded-full bg-slate-100 border border-slate-200 px-2 py-0.5 text-xs font-semibold text-slate-600">
                         {book.lccCode}
                     </span>
+                    {book.hasDigital && (
+                        <span className={cn(
+                            "inline-flex rounded-full border px-2 py-0.5 text-xs font-bold shadow-sm",
+                            book.accessModel === 'UNLIMITED'
+                                ? "bg-purple-50 border-purple-200 text-purple-700"
+                                : "bg-orange-50 border-orange-200 text-orange-700"
+                        )}>
+                            {book.accessModel === 'UNLIMITED' ? 'Unlimited' : 'Digital'}
+                        </span>
+                    )}
                 </div>
                 <h3 className="line-clamp-2 text-lg font-bold text-slate-900 group-hover:text-cyan-600">
                     {book.title}
