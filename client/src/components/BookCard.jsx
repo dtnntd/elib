@@ -21,7 +21,7 @@ export function BookCard({ book }) {
     return (
         <Link
             to={`/books/${book.id}`}
-            className="group relative flex flex-col overflow-hidden rounded-xl border border-white/10 bg-slate-800/50 shadow-lg transition-all hover:-translate-y-1 hover:border-cyan-500/50 hover:shadow-cyan-500/10"
+            className="group relative flex flex-col overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm transition-all hover:-translate-y-1 hover:border-cyan-500 hover:shadow-cyan-500/20"
         >
             <div className={cn("aspect-[2/3] w-full bg-gradient-to-br p-6 flex items-center justify-center", gradient)}>
                 <BookIcon className="h-16 w-16 text-white/80 transition-transform group-hover:scale-110" />
@@ -29,17 +29,17 @@ export function BookCard({ book }) {
 
             <div className="flex-1 p-4">
                 <div className="mb-2 flex items-center gap-2">
-                    <span className="inline-flex rounded-full bg-slate-700 px-2 py-0.5 text-xs font-medium text-slate-300">
+                    <span className="inline-flex rounded-full bg-slate-100 border border-slate-200 px-2 py-0.5 text-xs font-semibold text-slate-600">
                         {book.publishedYear}
                     </span>
-                    <span className="inline-flex rounded-full bg-slate-700 px-2 py-0.5 text-xs font-medium text-slate-300">
+                    <span className="inline-flex rounded-full bg-slate-100 border border-slate-200 px-2 py-0.5 text-xs font-semibold text-slate-600">
                         {book.lccCode}
                     </span>
                 </div>
-                <h3 className="line-clamp-2 text-lg font-semibold text-white group-hover:text-cyan-400">
+                <h3 className="line-clamp-2 text-lg font-bold text-slate-900 group-hover:text-cyan-600">
                     {book.title}
                 </h3>
-                <p className="mt-1 line-clamp-1 text-sm text-slate-400">
+                <p className="mt-1 line-clamp-1 text-sm text-slate-500">
                     by {book.authors?.join(', ') || 'Unknown Author'}
                 </p>
             </div>

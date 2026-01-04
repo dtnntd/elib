@@ -68,8 +68,29 @@ export const AuthProvider = ({ children }) => {
         }
     };
 
+    const updateProfile = async (fullName, branchId, password, oldPassword) => {
+        try {
+            const payload = { fullName, branchId };
+            if (password) {
+                payload.password = password;
+                payload.oldPassword = oldPassword;
+            }
+
+            const res = await api.put('/auth/profile', payload);
+            const updatedUser = res.data.user;
+            setUser(updatedUser);
+            localStorage.setItem('user', JSON.stringify(updatedUser)); // Persist
+            return { success: true };
+        } catch (error) {
+            return {
+                success: false,
+                error: error.response?.data?.error || 'Update failed'
+            };
+        }
+    };
+
     return (
-        <AuthContext.Provider value={{ user, login, register, logout, refreshUser, loading }}>
+        <AuthContext.Provider value={{ user, login, register, logout, refreshUser, updateProfile, loading }}>
             {children}
         </AuthContext.Provider>
     );

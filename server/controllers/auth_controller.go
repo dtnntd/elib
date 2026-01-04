@@ -113,3 +113,69 @@ func Register(c *gin.Context) {
 
 	c.JSON(http.StatusCreated, gin.H{"message": "Đăng ký thành công", "email": input.Email})
 }
+
+type UpdateProfileInput struct {
+	FullName    string `json:"fullName"`
+	BranchID    string `json:"branchId"`
+	Password    string `json:"password"`
+	OldPassword string `json:"oldPassword"`
+}
+
+func UpdateProfile(c *gin.Context) {
+	// Get User from context (set by Middleware)
+	user, exists := c.Get("user")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized"})
+		return
+	}
+	member := user.(*models.Member)
+
+	var input UpdateProfileInput
+	if err := c.ShouldBindJSON(&input); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	updateFields := bson.M{}
+	if input.FullName != "" {
+		updateFields["fullName"] = input.FullName
+	}
+	if input.BranchID != "" {
+		updateFields["branchId"] = input.BranchID
+	}
+	if input.Password != "" {
+		if input.OldPassword == "" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Current password is required to set a new one"})
+			return
+		}
+		// Verify old password
+		if !utils.CheckPassword(input.OldPassword, member.PasswordHash) {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "Incorrect current password"})
+			return
+		}
+
+		hash, _ := utils.HashPassword(input.Password)
+		updateFields["passwordHash"] = hash
+	}
+
+	if len(updateFields) == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "No fields to update"})
+		return
+	}
+
+	collection := config.GetCollection("members")
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	_, err := collection.UpdateOne(ctx, bson.M{"_id": member.ID}, bson.M{"$set": updateFields})
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update profile"})
+		return
+	}
+
+	// Return updated user
+	var updatedMember models.Member
+	collection.FindOne(ctx, bson.M{"_id": member.ID}).Decode(&updatedMember)
+
+	c.JSON(http.StatusOK, gin.H{"message": "Profile updated", "user": updatedMember})
+}

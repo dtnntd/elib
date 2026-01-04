@@ -34,6 +34,8 @@ func main() {
 		{
 			auth.POST("/login", controllers.Login)
 			auth.POST("/register", controllers.Register)
+			auth.Use(middleware.AuthMiddleware())
+			auth.PUT("/profile", controllers.UpdateProfile)
 		}
 		
 		books := api.Group("/books")
@@ -69,6 +71,29 @@ func main() {
 	{
 		stats.GET("/dashboard", controllers.GetDashboardStats)
 		stats.GET("/trends", controllers.GetMonthlyTrends)
+		stats.GET("/members", controllers.GetBranchMemberStats)
+		stats.GET("/circulation", controllers.GetBranchCirculationStats)
+	}
+
+
+	// VIP Routes
+	vip := api.Group("/vip")
+	{
+		vip.GET("/packages", controllers.GetVIPPackages) // Public
+		vip.Use(middleware.AuthMiddleware())
+		vip.GET("/status", controllers.GetVIPStatus)
+		vip.POST("/purchase", controllers.PurchaseVIP)
+	}
+
+	// Admin Routes (Admin/Staff only)
+	admin := api.Group("/admin")
+	admin.Use(middleware.AuthMiddleware())
+	{
+		admin.GET("/members", controllers.GetAllMembers)           // Admin/Staff
+		admin.POST("/grant-vip/:memberId", controllers.GrantVIP)   // Admin/Staff
+		admin.POST("/promote-role/:memberId", controllers.PromoteRole) // Admin only
+		admin.DELETE("/revoke-vip/:memberId", controllers.RevokeVIP)   // Admin/Staff
+		admin.POST("/downgrade-role/:memberId", controllers.DowngradeRole) // Admin only
 	}
 
 	r.Run(":8081")

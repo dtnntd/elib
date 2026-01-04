@@ -1,0 +1,146 @@
+package controllers
+
+import (
+	"context"
+	"net/http"
+	"time"
+
+	"elibrary-api/models"
+	"elibrary-api/config"
+
+	"github.com/gin-gonic/gin"
+	"go.mongodb.org/mongo-driver/bson"
+	"go.mongodb.org/mongo-driver/bson/primitive"
+)
+
+type VIPPackage struct {
+	ID       string `json:"id"`
+	Name     string `json:"name"`
+	Duration int    `json:"duration"` // days
+	Price    int    `json:"price"`    // VND
+	Discount int    `json:"discount"` // percentage
+}
+
+var vipPackages = []VIPPackage{
+	{ID: "1month", Name: "1 Month VIP", Duration: 30, Price: 50000, Discount: 0},
+	{ID: "3months", Name: "3 Months VIP", Duration: 90, Price: 120000, Discount: 20},
+	{ID: "6months", Name: "6 Months VIP", Duration: 180, Price: 200000, Discount: 33},
+	{ID: "1year", Name: "1 Year VIP", Duration: 365, Price: 300000, Discount: 50},
+}
+
+func GetVIPPackages(c *gin.Context) {
+	c.JSON(http.StatusOK, gin.H{
+		"packages": vipPackages,
+	})
+}
+
+func GetVIPStatus(c *gin.Context) {
+	memberID, _ := c.Get("memberID")
+	objID, _ := primitive.ObjectIDFromHex(memberID.(string))
+
+	var member models.Member
+	err := config.GetCollection("members").FindOne(context.TODO(), bson.M{"_id": objID}).Decode(&member)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Member not found"})
+		return
+	}
+
+	response := gin.H{
+		"isVip":   member.IsVIP,
+		"vipType": member.VIPType,
+	}
+
+	if member.VIPExpiresAt != nil {
+		response["vipExpiresAt"] = member.VIPExpiresAt
+		response["daysRemaining"] = int(time.Until(*member.VIPExpiresAt).Hours() / 24)
+	} else if member.IsVIP {
+		response["permanent"] = true
+	}
+
+	c.JSON(http.StatusOK, response)
+}
+
+type PurchaseVIPRequest struct {
+	PackageID string `json:"packageId" binding:"required"`
+}
+
+func PurchaseVIP(c *gin.Context) {
+	memberID, _ := c.Get("memberID")
+	objID, _ := primitive.ObjectIDFromHex(memberID.(string))
+
+	var req PurchaseVIPRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	// Find package
+	var selectedPackage *VIPPackage
+	for _, pkg := range vipPackages {
+		if pkg.ID == req.PackageID {
+			selectedPackage = &pkg
+			break
+		}
+	}
+
+	if selectedPackage == nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid package ID"})
+		return
+	}
+
+	// Get member
+	var member models.Member
+	err := config.GetCollection("members").FindOne(context.TODO(), bson.M{"_id": objID}).Decode(&member)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Member not found"})
+		return
+	}
+
+	// Check wallet balance
+	if member.WalletBalance < selectedPackage.Price {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Insufficient wallet balance"})
+		return
+	}
+
+	// Calculate expiration
+	var expiresAt time.Time
+	if member.IsVIP && member.VIPExpiresAt != nil && member.VIPExpiresAt.After(time.Now()) {
+		// Extend existing VIP
+		expiresAt = member.VIPExpiresAt.Add(time.Duration(selectedPackage.Duration) * 24 * time.Hour)
+	} else {
+		// New VIP
+		expiresAt = time.Now().Add(time.Duration(selectedPackage.Duration) * 24 * time.Hour)
+	}
+
+	// Update member
+	update := bson.M{
+		"$set": bson.M{
+			"isVip":         true,
+			"vipExpiresAt":  expiresAt,
+			"vipType":       "PURCHASED",
+			"walletBalance": member.WalletBalance - selectedPackage.Price,
+		},
+	}
+
+	_, err = config.GetCollection("members").UpdateOne(context.TODO(), bson.M{"_id": objID}, update)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to purchase VIP"})
+		return
+	}
+	// Create transaction record
+	transaction := models.Transaction{
+		MemberID:    objID,
+		Amount:      -selectedPackage.Price, // Negative for deduction
+		Type:        "VIP_PURCHASE",
+		Description: "VIP Purchase: " + selectedPackage.Name,
+		CreatedAt:   time.Now(),
+	}
+	config.GetCollection("transactions").InsertOne(context.TODO(), transaction)
+
+
+	c.JSON(http.StatusOK, gin.H{
+		"message":      "VIP purchased successfully",
+		"vipExpiresAt": expiresAt,
+		"newBalance":   member.WalletBalance - selectedPackage.Price,
+	})
+}

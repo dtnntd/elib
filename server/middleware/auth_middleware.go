@@ -53,8 +53,65 @@ func AuthMiddleware() gin.HandlerFunc {
 			return
 		}
 
+	// Check VIP expiration
+	if member.IsVIP && member.VIPExpiresAt != nil && member.VIPExpiresAt.Before(time.Now()) {
+		// VIP has expired, update member
+		update := bson.M{
+			"$set": bson.M{"isVip": false},
+			"$unset": bson.M{"vipExpiresAt": "", "vipType": ""},
+		}
+		collection.UpdateOne(ctx, bson.M{"_id": objID}, update)
+		member.IsVIP = false
+		member.VIPExpiresAt = nil
+		member.VIPType = ""
+	}
+
+
 		// Store user in context
 		c.Set("user", &member)
+	c.Set("memberID", member.ID.Hex())
+		c.Next()
+	}
+}
+
+// RequireAdmin middleware - only Admin can access
+func RequireAdmin() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		userVal, exists := c.Get("user")
+		if !exists {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized"})
+			c.Abort()
+			return
+		}
+
+		user := userVal.(*models.Member)
+		if user.Role != "ADMIN" {
+			c.JSON(http.StatusForbidden, gin.H{"error": "Admin access required"})
+			c.Abort()
+			return
+		}
+
+		c.Next()
+	}
+}
+
+// RequireStaffOrAdmin middleware - Staff or Admin can access
+func RequireStaffOrAdmin() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		userVal, exists := c.Get("user")
+		if !exists {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized"})
+			c.Abort()
+			return
+		}
+
+		user := userVal.(*models.Member)
+		if user.Role != "ADMIN" && user.Role != "STAFF" {
+			c.JSON(http.StatusForbidden, gin.H{"error": "Staff or Admin access required"})
+			c.Abort()
+			return
+		}
+
 		c.Next()
 	}
 }

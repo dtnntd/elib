@@ -1,0 +1,214 @@
+name: elibrary-mongo
+
+networks:
+  elib-net:
+    driver: bridge
+
+volumes:
+  cfg1-data:
+  cfg2-data:
+  cfg3-data:
+  hn1-data:
+  hp1-data:
+  dn1-data:
+  ex1-data:
+  ex2-data:
+
+services:
+  # ==========================================
+  # DATABASE CLUSTER (MongoDB Sharded)
+  # ==========================================
+  
+  # Config Servers
+  cfg1:
+    image: mongo:7.0
+    container_name: cfg1
+    command: ["mongod", "--configsvr", "--replSet", "cfgRS", "--port", "27117", "--bind_ip_all"]
+    ports: ["27117:27117"]
+    volumes: [cfg1-data:/data/db]
+    networks: [elib-net]
+    healthcheck:
+      test: ["CMD-SHELL", "mongosh --quiet --port 27117 --eval 'db.adminCommand(\"ping\").ok' | grep 1 >/dev/null"]
+      interval: 5s
+      timeout: 5s
+      retries: 60
+
+  cfg2:
+    image: mongo:7.0
+    container_name: cfg2
+    command: ["mongod", "--configsvr", "--replSet", "cfgRS", "--port", "27118", "--bind_ip_all"]
+    ports: ["27118:27118"]
+    volumes: [cfg2-data:/data/db]
+    networks: [elib-net]
+    healthcheck:
+      test: ["CMD-SHELL", "mongosh --quiet --port 27118 --eval 'db.adminCommand(\"ping\").ok' | grep 1 >/dev/null"]
+      interval: 5s
+      timeout: 5s
+      retries: 60
+
+  cfg3:
+    image: mongo:7.0
+    container_name: cfg3
+    command: ["mongod", "--configsvr", "--replSet", "cfgRS", "--port", "27119", "--bind_ip_all"]
+    ports: ["27119:27119"]
+    volumes: [cfg3-data:/data/db]
+    networks: [elib-net]
+    healthcheck:
+      test: ["CMD-SHELL", "mongosh --quiet --port 27119 --eval 'db.adminCommand(\"ping\").ok' | grep 1 >/dev/null"]
+      interval: 5s
+      timeout: 5s
+      retries: 60
+
+  # Shard 1 (rsCity)
+  hn1:
+    image: mongo:7.0
+    container_name: hn1
+    command: ["mongod", "--shardsvr", "--replSet", "rsCity", "--port", "27017", "--bind_ip_all"]
+    ports: ["27017:27017"]
+    volumes: [hn1-data:/data/db]
+    networks: [elib-net]
+    healthcheck:
+      test: ["CMD-SHELL", "mongosh --quiet --port 27017 --eval 'db.adminCommand(\"ping\").ok' | grep 1 >/dev/null"]
+      interval: 5s
+      timeout: 5s
+      retries: 60
+
+  hp1:
+    image: mongo:7.0
+    container_name: hp1
+    command: ["mongod", "--shardsvr", "--replSet", "rsCity", "--port", "27018", "--bind_ip_all"]
+    ports: ["27018:27018"]
+    volumes: [hp1-data:/data/db]
+    networks: [elib-net]
+    healthcheck:
+      test: ["CMD-SHELL", "mongosh --quiet --port 27018 --eval 'db.adminCommand(\"ping\").ok' | grep 1 >/dev/null"]
+      interval: 5s
+      timeout: 5s
+      retries: 60
+
+  dn1:
+    image: mongo:7.0
+    container_name: dn1
+    command: ["mongod", "--shardsvr", "--replSet", "rsCity", "--port", "27019", "--bind_ip_all"]
+    ports: ["27019:27019"]
+    volumes: [dn1-data:/data/db]
+    networks: [elib-net]
+    healthcheck:
+      test: ["CMD-SHELL", "mongosh --quiet --port 27019 --eval 'db.adminCommand(\"ping\").ok' | grep 1 >/dev/null"]
+      interval: 5s
+      timeout: 5s
+      retries: 60
+
+  # Shard 2 (rsExtra)
+  ex1:
+    image: mongo:7.0
+    container_name: ex1
+    command: ["mongod", "--shardsvr", "--replSet", "rsExtra", "--port", "27217", "--bind_ip_all"]
+    ports: ["27217:27217"]
+    volumes: [ex1-data:/data/db]
+    networks: [elib-net]
+    healthcheck:
+      test: ["CMD-SHELL", "mongosh --quiet --port 27217 --eval 'db.adminCommand(\"ping\").ok' | grep 1 >/dev/null"]
+      interval: 5s
+      timeout: 5s
+      retries: 60
+
+  ex2:
+    image: mongo:7.0
+    container_name: ex2
+    command: ["mongod", "--shardsvr", "--replSet", "rsExtra", "--port", "27218", "--bind_ip_all"]
+    ports: ["27218:27218"]
+    volumes: [ex2-data:/data/db]
+    networks: [elib-net]
+    healthcheck:
+      test: ["CMD-SHELL", "mongosh --quiet --port 27218 --eval 'db.adminCommand(\"ping\").ok' | grep 1 >/dev/null"]
+      interval: 5s
+      timeout: 5s
+      retries: 60
+
+  # Initialization
+  config-init:
+    image: mongo:7.0
+    container_name: config-init
+    depends_on:
+      cfg1: { condition: service_healthy }
+      cfg2: { condition: service_healthy }
+      cfg3: { condition: service_healthy }
+    networks: [elib-net]
+    command: >
+      bash -c "echo 'Initializing Config Replica Set...'; sleep 3;
+      mongosh --host cfg1:27117 --quiet --eval 'rs.status().ok || rs.initiate({_id: \"cfgRS\", configsvr: true, members: [{ _id: 0, host: \"cfg1:27117\" }, { _id: 1, host: \"cfg2:27118\" }, { _id: 2, host: \"cfg3:27119\" }]})';
+      echo 'Waiting for primary...'; sleep 5;"
+    restart: "no"
+
+  # Router
+  mongos1:
+    image: mongo:7.0
+    container_name: mongos1
+    depends_on:
+      config-init: { condition: service_completed_successfully }
+    command: ["mongos", "--configdb", "cfgRS/cfg1:27117,cfg2:27118,cfg3:27119", "--port", "27020", "--bind_ip_all"]
+    ports: ["27020:27020"]
+    networks: [elib-net]
+    healthcheck:
+      test: ["CMD-SHELL", "mongosh --quiet --port 27020 --eval 'db.adminCommand(\"ping\").ok' | grep 1 >/dev/null"]
+      interval: 5s
+      timeout: 5s
+      retries: 60
+
+  mongo-init:
+    image: mongo:7.0
+    container_name: mongo-init
+    depends_on:
+      mongos1: { condition: service_healthy }
+      hn1: { condition: service_healthy }
+      hp1: { condition: service_healthy }
+      dn1: { condition: service_healthy }
+      ex1: { condition: service_healthy }
+      ex2: { condition: service_healthy }
+    volumes:
+      - ./deploy/init:/init:ro
+    entrypoint: ["bash", "/init/init.sh"]
+    restart: "no"
+    networks: [elib-net]
+
+  # ==========================================
+  # APPLICATION (Backend + Frontend)
+  # ==========================================
+  
+  server:
+    build: 
+      context: ./server
+      dockerfile: Dockerfile.dev
+    container_name: elib-server
+    ports:
+      - "8081:8081"
+    volumes:
+      - ./server:/app
+      - ./server/go.mod:/app/go.mod
+      - ./server/go.sum:/app/go.sum
+    environment:
+      - MONGO_URI=mongodb://mongos1:27020
+      - DB_NAME=elibrary
+      - GIN_MODE=debug
+    networks:
+      - elib-net
+    depends_on:
+      mongos1:
+        condition: service_healthy
+
+  client:
+    image: node:22-alpine
+    container_name: elib-client
+    shm_size: '1gb'
+    working_dir: /app
+    volumes:
+      - ./client:/app
+      - /app/node_modules
+    command: sh -c "npm install && npm run dev -- --host"
+    ports:
+      - "5173:5173"
+    networks:
+      - elib-net
+    depends_on:
+      - server

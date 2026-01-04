@@ -8,57 +8,61 @@ A modern Library Management System built with a Go backend (Gin), React frontend
 -   **Node.js**: v18 or newer
 -   **Docker & Docker Compose**: For running the database cluster.
 
-## 🛠️ Installation & Setup
+## 🛠️ Installation & Setup (Docker Recommended)
 
-### 1. Database Setup (MongoDB Sharded Cluster)
+The project now uses a **Unified Docker Compose** setup. You can start the entire system (Database + Backend + Frontend) with a single command.
 
-The database runs in Docker containers mimicking a real-world sharded environment (Config Servers, Shards, Router).
+### 🚀 One-Click Start
+
+Run the following command in the project root:
 
 ```bash
-cd deploy
 docker-compose up -d
 ```
 
-> **Wait for initialization**: It may take 1-2 minutes for the replica sets and sharding to initiate completely. You can check status with `docker ps`.
+> **Note**: The first run will take a few minutes to:
+> 1. Initialize the MongoDB Sharded Cluster (Config servers, Shards).
+> 2. Build the Backend (Go) and Frontend (React) images.
+> 3. Wait for `mongos1` (Router) to become healthy before starting the backend.
 
-### 2. Backend Setup (Go)
+### Verify Running Services
 
-The backend API server runs on **Port 8081**.
+-   **Frontend**: [http://localhost:5173](http://localhost:5173)
+-   **Backend API**: [http://localhost:8081](http://localhost:8081)
+-   **Database Cluster**: 
+    -   Router (mongos): `localhost:27020`
+    -   Shard 1 (City): `localhost:27017`
 
+No manual configuration needed. The unified network ensures backend can resolve `mongos1` automatically.
+
+---
+
+## 🛠️ Manual Setup (Alternative)
+
+If you prefer running services locally (e.g. for debugging):
+
+### 1. Database (Required)
+You still need the database running via Docker.
+```bash
+cd deploy && docker-compose up -d
+```
+
+### 2. Backend (Go)
 ```bash
 cd server
-
-# Install dependencies
 go mod tidy
-
-# Run the server
-# Note: connect directly to shard if router (mongos) is unavailable
+# Connect to local shard if router is not exposed/ready
 export MONGO_URI="mongodb://localhost:27017/?directConnection=true"
 go run main.go
 ```
+(Server typically runs on **:8081** in manual mode to avoid conflicts)
 
-*Expected Output:*
-```
-...
-MongoDB Connected Successfully
-[GIN-debug] Listening and serving HTTP on :8081
-```
-
-### 3. Frontend Setup (React)
-
-The frontend development server runs on **Port 5173**.
-
+### 3. Frontend (React)
 ```bash
 cd client
-
-# Install dependencies
 npm install
-
-# Start Dev Server
 npm run dev
 ```
-
-OPEN [http://localhost:5173](http://localhost:5173) to view the app.
 
 ## 🧪 Testing
 
@@ -89,3 +93,96 @@ python3 tests/test_stats_api.py
 -   `/client`: React Frontend (Pages, Components, Context).
 -   `/deploy`: Docker Compose for MongoDB Infrastructure.
 -   `/tests`: Python API verification scripts.
+
+---
+
+# 🌍 Production Deployment Guide
+
+This guide explains how to deploy the E-Library system to a production server (Linux/VPS).
+
+## 1. Preparation
+
+Ensure your server has **Docker** and **Docker Compose** installed.
+
+## 2. Infrastructure (Database)
+
+We keep the database infrastructure separate to manage its lifecycle independently (data persistence is critical).
+
+```bash
+# 1. Clone the repo
+git clone <your-repo-url>
+cd elib
+
+# 2. Start the Database Cluster
+cd deploy
+docker-compose up -d
+
+# 3. Verify it's healthy
+docker ps
+# Ensure mongos1, config servers, and shards are "healthy"
+```
+
+## 3. Application Deployment
+
+For production, we should proper Docker images (not hot-reload dev versions).
+
+### Option A: Quick & Simple (Using existing Dev setup)
+
+If you just want to run it quickly:
+```bash
+# Return to root
+cd ..
+
+# Start the App
+docker-compose -f docker-compose.app.yml up -d --build
+```
+*Note: This runs the "Dev" versions (Air watcher, Vite dev server). Not optimized for performance but works.*
+
+### Option B: Professional Production Setup (Recommended)
+
+Create a `docker-compose.prod.yml` that builds optimized images.
+
+1.  **Frontend**: Build React to static HTML/CSS/JS and serve with Nginx.
+2.  **Backend**: Compile Go binary and run in a minimal Alpine container.
+
+**Example `docker-compose.prod.yml`:**
+```yaml
+version: '3.8'
+
+services:
+  server:
+    build:
+      context: ./server
+      dockerfile: Dockerfile  # Create a multi-stage Dockerfile
+    ports:
+      - "8080:8080"
+    environment:
+      - MONGO_URI=mongodb://mongos1:27020
+      - GIN_MODE=release
+    networks:
+      - elib
+
+  client:
+    build:
+      context: ./client
+      dockerfile: Dockerfile # Nginx build
+    ports:
+      - "80:80"
+    networks:
+      - elib
+
+networks:
+  elib:
+    external: true
+    name: elibrary-mongo_elib-net
+```
+
+## 4. Troubleshooting Connection
+
+If the application cannot connect to the database (`dial tcp: lookup mongos1...`), ensure:
+
+1.  **Network Name**: The `external: name:` in your compose file must match the actual network name created by the database stack.
+    -   Check with: `docker network ls`
+    -   If it's named `deploy_default`, update your app compose file.
+
+2.  **Startup Order**: Start the Database stack *minutes* before the App stack to allow the Sharded Cluster to elect primaries.

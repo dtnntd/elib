@@ -1,5 +1,6 @@
 import { BrowserRouter as Router, Routes, Route, Navigate, Outlet, Link } from 'react-router-dom';
-import { BookOpen } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { BookOpen, Crown, Shield, Star, Users } from 'lucide-react';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import Login from './pages/Login';
 import Register from './pages/Register';
@@ -8,7 +9,11 @@ import BookDetail from './pages/BookDetail';
 
 import MyLoans from './pages/MyLoans';
 import StaffDashboard from './pages/StaffDashboard';
+import StatsDashboard from './pages/StatsDashboard';
 import WalletPage from './pages/WalletPage';
+import UserProfile from './pages/UserProfile';
+import VIPPage from './pages/VIPPage';
+import AdminMembersPage from './pages/AdminMembersPage';
 import { cn } from './lib/utils';
 
 // Protected Route Component
@@ -27,37 +32,69 @@ const DashboardLayout = () => {
   const isStaff = user?.role === 'ADMIN' || user?.role === 'STAFF';
 
   return (
-    <div className="flex min-h-screen flex-col">
-      <header className="sticky top-0 z-50 border-b border-white/10 bg-slate-900/80 p-4 shadow-lg backdrop-blur-xl">
+    <div className="flex min-h-screen flex-col font-sans">
+      <header className="sticky top-0 z-50 border-b border-slate-200 bg-white/80 p-4 shadow-sm backdrop-blur-xl">
         <div className="container mx-auto flex items-center justify-between">
-          <Link to="/" className="text-xl font-bold text-white flex items-center gap-2 hover:opacity-80 transition">
-            <span className="text-cyan-500 text-2xl">⚡</span> E-Library <span className="hidden sm:inline text-xs font-normal text-slate-400">Sharded Cluster</span>
+          <Link to="/" className="text-xl font-bold text-slate-800 flex items-center gap-2 hover:opacity-80 transition">
+            <span className="text-cyan-600 text-2xl">⚡</span> E-Library <span className="hidden sm:inline text-xs font-normal text-slate-500">Sharded Cluster</span>
           </Link>
           <div className="flex items-center gap-4">
             {isStaff && (
-              <Link to="/staff" className="flex items-center gap-2 rounded-lg bg-indigo-500/10 px-4 py-2 text-sm font-semibold text-indigo-400 hover:bg-indigo-500/20 hover:text-indigo-300 transition">
+              <Link to="/staff" className="flex items-center gap-2 rounded-lg bg-indigo-50 text-indigo-600 px-4 py-2 text-sm font-bold hover:bg-indigo-100 transition border border-indigo-100">
                 Dashboard
               </Link>
             )}
-            <Link to="/my-loans" className="flex items-center gap-2 rounded-lg bg-cyan-500/10 px-4 py-2 text-sm font-semibold text-cyan-400 hover:bg-cyan-500/20 hover:text-cyan-300 transition">
+            {isStaff && (
+              <Link to="/stats/dashboard" className="flex items-center gap-2 rounded-lg bg-emerald-50 text-emerald-600 px-3 py-2 text-sm font-bold hover:bg-emerald-100 transition border border-emerald-100">
+                Analytics
+              </Link>
+            )}
+            {isStaff && (
+              <Link to="/admin/members" className="flex items-center gap-2 rounded-lg bg-purple-50 text-purple-600 px-3 py-2 text-sm font-bold hover:bg-purple-100 transition border border-purple-100">
+                <Users className="h-4 w-4" /> Members
+              </Link>
+            )}
+            <Link to="/my-loans" className="flex items-center gap-2 rounded-lg bg-cyan-50 text-cyan-700 px-4 py-2 text-sm font-bold hover:bg-cyan-100 transition border border-cyan-100">
               <BookOpen className="h-4 w-4" /> My Shelf
             </Link>
+            <Link to="/vip" className="flex items-center gap-2 rounded-lg bg-gradient-to-r from-purple-500 to-pink-500 text-white px-4 py-2 text-sm font-bold hover:scale-105 transition shadow-md">
+              <Crown className="h-4 w-4" /> VIP
+            </Link>
 
-            <div className="hidden text-right sm:block">
+            <div className="hidden text-right sm:block border-l border-slate-200 pl-4 ml-2">
               <div className="flex items-center justify-end gap-2">
-                <p className="text-sm font-medium text-white">{user?.fullName}</p>
-                {user?.subscription?.plan === 'VIP' && (
-                  <span className="rounded bg-amber-500/20 px-1.5 py-0.5 text-[10px] font-bold text-amber-400 border border-amber-500/30">VIP</span>
+                <Link to="/profile" className="text-sm font-bold text-slate-800 hover:text-cyan-600 transition flex items-center gap-2">
+                  {user?.fullName}
+                </Link>
+                {user?.role === 'ADMIN' && (
+                  <span className="inline-flex items-center gap-1 rounded-full bg-yellow-100 px-2 py-0.5 text-[10px] font-extrabold text-yellow-700 border border-yellow-200">
+                    <Crown className="h-3 w-3" /> ADMIN
+                  </span>
                 )}
-                {isStaff && (
-                  <span className="rounded bg-indigo-500/20 px-1.5 py-0.5 text-[10px] font-bold text-indigo-400 border border-indigo-500/30">STAFF</span>
+                {user?.role === 'STAFF' && (
+                  <span className="inline-flex items-center gap-1 rounded-full bg-blue-100 px-2 py-0.5 text-[10px] font-extrabold text-blue-700 border border-blue-200">
+                    <Shield className="h-3 w-3" /> STAFF
+                  </span>
+                )}
+                {user?.isVip && user?.role !== 'ADMIN' && user?.role !== 'STAFF' && (
+                  <span className="inline-flex items-center gap-1 rounded-full bg-purple-100 px-2 py-0.5 text-[10px] font-extrabold text-purple-700 border border-purple-200">
+                    <Star className="h-3 w-3" /> VIP
+                  </span>
                 )}
               </div>
-              <Link to="/wallet" className="text-xs text-slate-400 hover:text-white transition">
-                Wallet: <span className={cn("font-mono", (user?.walletBalance || 0) < 0 ? "text-red-400" : "text-emerald-400")}>{(user?.walletBalance || 0).toLocaleString()}đ</span>
-              </Link>
+              <div className="flex items-center justify-end gap-3 mt-0.5">
+                <Link to="/wallet" className="text-xs text-slate-500 hover:text-slate-800 transition">
+                  Wallet: <span className={cn("font-mono font-bold", (user?.walletBalance || 0) < 0 ? "text-red-500" : "text-emerald-600")}>{(user?.walletBalance || 0).toLocaleString()}đ</span>
+                </Link>
+                <span className="text-slate-300">|</span>
+                <p className="text-xs text-slate-500 flex items-center gap-1">
+                  Branch: <span className="text-slate-700 font-semibold">{
+                    { 'HN': 'Hanoi', 'HP': 'Haiphong', 'DN': 'Danang' }[user?.branchId] || user?.branchId
+                  }</span>
+                </p>
+              </div>
             </div>
-            <button onClick={logout} className="rounded bg-red-500/10 px-3 py-1.5 text-sm text-red-400 hover:bg-red-500/20 active:scale-95 transition">Logout</button>
+            <button onClick={logout} className="rounded-lg bg-rose-50 px-3 py-2 text-sm font-medium text-rose-600 hover:bg-rose-100 transition border border-rose-100">Logout</button>
           </div>
         </div>
       </header>
@@ -82,7 +119,11 @@ function App() {
               <Route path="/books/:id" element={<BookDetail />} />
               <Route path="/my-loans" element={<MyLoans />} />
               <Route path="/wallet" element={<WalletPage />} />
+              <Route path="/vip" element={<VIPPage />} />
               <Route path="/staff" element={<StaffDashboard />} />
+              <Route path="/stats/dashboard" element={<StatsDashboard />} />
+              <Route path="/admin/members" element={<AdminMembersPage />} />
+              <Route path="/profile" element={<UserProfile />} />
             </Route>
           </Route>
 

@@ -21,5 +21,11 @@ type Member struct {
 	Role          string             `bson:"role" json:"role"`      // "MEMBER", "STAFF", "ADMIN"
 	WalletBalance int                `bson:"walletBalance" json:"walletBalance"`
 	Subscription  Subscription       `bson:"subscription" json:"subscription"`
-	CreatedAt     time.Time          `bson:"createdAt,omitempty" json:"createdAt"`
+	
+	// VIP Membership Fields
+	IsVIP        bool       `bson:"isVip" json:"isVip"`
+	VIPExpiresAt *time.Time `bson:"vipExpiresAt,omitempty" json:"vipExpiresAt,omitempty"` // nil = permanent VIP
+	VIPType      string     `bson:"vipType,omitempty" json:"vipType,omitempty"`            // "PURCHASED", "STAFF", "ADMIN"
+	
+	CreatedAt time.Time `bson:"createdAt,omitempty" json:"createdAt"`
 }

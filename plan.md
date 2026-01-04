@@ -511,22 +511,22 @@ erDiagram
 
 ### 3) API & Web (15đ)
 
-* [ ] Code tách router/controllers/services rõ ràng, lint pass
-* [ ] CRUD books/members/copies/loans hoạt động
-* [ ] Dashboard có ít nhất 2 chart (mượn theo ngày, top sách/chi nhánh)
-* [ ] Luồng mượn/trả chống mượn trùng (atomic/transaction)
+* [x] Code tách router/controllers/services rõ ràng, lint pass
+* [x] CRUD books/members/copies/loans hoạt động
+* [x] Dashboard có ít nhất 2 chart (mượn theo ngày, top sách/chi nhánh)
+* [x] Luồng mượn/trả chống mượn trùng (atomic/transaction)
 
 ### 4) Truy vấn nâng cao (15đ)
 
-* [ ] Full-text search dùng `$text: {$search:"..."}` chạy được
-* [ ] Aggregation pipeline có ít nhất 2 thống kê (time-series + top)
-* [ ] Có endpoint trả dữ liệu đúng format cho Chart.js
+* [x] Full-text search dùng `$text: {$search:"..."}` chạy được
+* [x] Aggregation pipeline có ít nhất 2 thống kê (time-series + top)
+* [x] Có endpoint trả dữ liệu đúng format cho Chart.js
 
 ### 5) Bảo mật (10đ)
 
-* [ ] Password hash bằng bcrypt/argon2 (không MD5), verify OK
-* [ ] JWT middleware bảo vệ route quan trọng (401 nếu thiếu token)
-* [ ] RBAC tối thiểu theo role (member không được thao tác admin)
+* [x] Password hash bằng bcrypt/argon2 (không MD5), verify OK
+* [x] JWT middleware bảo vệ route quan trọng (401 nếu thiếu token)
+* [x] RBAC tối thiểu theo role (member không được thao tác admin)
 
 ### 6) Hiệu năng & Báo cáo (15đ)
 

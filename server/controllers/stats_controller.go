@@ -24,24 +24,54 @@ func GetDashboardStats(c *gin.Context) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	// 1. Counts
-	totalBooks, _ := config.GetCollection("books").CountDocuments(ctx, bson.M{})
-	totalMembers, _ := config.GetCollection("members").CountDocuments(ctx, bson.M{})
-	
-	// Active Loans: BORROWED or RESERVED or OVERDUE
-	activeLoans, _ := config.GetCollection("loans").CountDocuments(ctx, bson.M{
-		"status": bson.M{"$in": []string{"BORROWED", "RESERVED", "OVERDUE"}},
-	})
+	branchId := c.Query("branchId")
 
-	// 2. Revenue (Aggregation)
-	pipeline := mongo.Pipeline{
-		{{Key: "$match", Value: bson.M{"type": "DEPOSIT"}}},
-		{{Key: "$group", Value: bson.M{
+	// 1. Total Books (Global Catalog - Unfiltered)
+	totalBooks, _ := config.GetCollection("books").CountDocuments(ctx, bson.M{})
+
+	// 2. Total Members
+	memberFilter := bson.M{}
+	if branchId != "" {
+		memberFilter["branchId"] = branchId
+	}
+	totalMembers, _ := config.GetCollection("members").CountDocuments(ctx, memberFilter)
+
+	// 3. Active Loans: BORROWED or RESERVED or OVERDUE
+	loanFilter := bson.M{
+		"status": bson.M{"$in": []string{"BORROWED", "RESERVED", "OVERDUE"}},
+	}
+	if branchId != "" {
+		loanFilter["branchId"] = branchId
+	}
+	activeLoans, _ := config.GetCollection("loans").CountDocuments(ctx, loanFilter)
+
+	// 4. Revenue (Aggregation)
+	// If branchId is present, we must join with Members to filter by branch
+	pipeline := mongo.Pipeline{}
+
+	if branchId != "" {
+		// Join with Members to check branch
+		pipeline = append(pipeline,
+			bson.D{{Key: "$lookup", Value: bson.M{
+				"from":         "members",
+				"localField":   "memberId",
+				"foreignField": "_id",
+				"as":           "member_info",
+			}}},
+			bson.D{{Key: "$unwind", Value: "$member_info"}},
+			bson.D{{Key: "$match", Value: bson.M{"member_info.branchId": branchId}}},
+		)
+	}
+
+	// Filter DEPOSITs only
+	pipeline = append(pipeline,
+		bson.D{{Key: "$match", Value: bson.M{"type": "DEPOSIT"}}},
+		bson.D{{Key: "$group", Value: bson.M{
 			"_id":   nil,
 			"total": bson.M{"$sum": "$amount"},
 		}}},
-	}
-	
+	)
+
 	cursor, err := config.GetCollection("transactions").Aggregate(ctx, pipeline)
 	totalRevenue := 0
 	if err == nil && cursor.Next(ctx) {
@@ -66,13 +96,20 @@ func GetMonthlyTrends(c *gin.Context) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
+	branchId := c.Query("branchId")
 	loansColl := config.GetCollection("loans")
 
 	// Filter: Last 6 months
 	sixMonthsAgo := time.Now().AddDate(0, -6, 0)
+
+	matchStage := bson.M{"borrowedAt": bson.M{"$gte": sixMonthsAgo}}
+	if branchId != "" {
+		matchStage["branchId"] = branchId
+	}
+
 	// 2. Aggregate
 	pipeline := mongo.Pipeline{
-		{{Key: "$match", Value: bson.M{"borrowedAt": bson.M{"$gte": sixMonthsAgo}}}},
+		{{Key: "$match", Value: matchStage}},
 		{{Key: "$group", Value: bson.M{
 			"_id": bson.M{
 				"month": bson.M{"$month": "$borrowedAt"},
@@ -100,6 +137,134 @@ func GetMonthlyTrends(c *gin.Context) {
 
 	results := make([]TrendResult, 0)
 
+	if err = cursor.All(ctx, &results); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, results)
+}
+// GetBranchMemberStats returns members with their loan counts
+func GetBranchMemberStats(c *gin.Context) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	branchId := c.Query("branchId")
+	matchStage := bson.M{}
+	if branchId != "" {
+		matchStage["branchId"] = branchId
+	}
+
+	pipeline := mongo.Pipeline{
+		{{Key: "$match", Value: matchStage}},
+		// Lookup Active Loans
+		{{Key: "$lookup", Value: bson.M{
+			"from": "loans",
+			"let":  bson.M{"mid": "$_id"},
+			"pipeline": []bson.M{
+				{"$match": bson.M{
+					"$expr": bson.M{"$eq": []string{"$memberId", "$$mid"}},
+					"status": bson.M{"$in": []string{"BORROWED", "OVERDUE", "RESERVED"}},
+				}},
+			},
+			"as": "active_loans",
+		}}},
+		// Lookup History Count
+		{{Key: "$lookup", Value: bson.M{
+			"from": "loans",
+			"let":  bson.M{"mid": "$_id"},
+			"pipeline": []bson.M{
+				{"$match": bson.M{
+					"$expr": bson.M{"$eq": []string{"$memberId", "$$mid"}},
+					"status": "RETURNED",
+				}},
+				{"$count": "count"},
+			},
+			"as": "history_count",
+		}}},
+		// Project
+		{{Key: "$project", Value: bson.M{
+			"id":             "$_id",
+			"fullName":       1,
+			"email":          1,
+			"memberCode":     1,
+			"activeLoans":    bson.M{"$size": "$active_loans"},
+			"totalReturn":    bson.M{"$ifNull": []interface{}{bson.M{"$arrayElemAt": []interface{}{"$history_count.count", 0}}, 0}},
+			"joinedAt":       "$createdAt",
+		}}},
+		{{Key: "$sort", Value: bson.M{"activeLoans": -1}}}, // Most active first
+	}
+
+	cursor, err := config.GetCollection("members").Aggregate(ctx, pipeline)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	defer cursor.Close(ctx)
+
+	var results []bson.M
+	if err = cursor.All(ctx, &results); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, results)
+}
+
+// GetBranchCirculationStats returns detailed list of active loans
+func GetBranchCirculationStats(c *gin.Context) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	branchId := c.Query("branchId")
+	matchStage := bson.M{
+		"status": bson.M{"$in": []string{"BORROWED", "OVERDUE", "RESERVED"}},
+	}
+	if branchId != "" {
+		matchStage["branchId"] = branchId
+	}
+
+	pipeline := mongo.Pipeline{
+		{{Key: "$match", Value: matchStage}},
+		// Join Book for Title
+		{{Key: "$lookup", Value: bson.M{
+			"from":         "books",
+			"localField":   "bookId",
+			"foreignField": "_id",
+			"as":           "book",
+		}}},
+		{{Key: "$unwind", Value: "$book"}},
+		// Join Member for Name
+		{{Key: "$lookup", Value: bson.M{
+			"from":         "members",
+			"localField":   "memberId",
+			"foreignField": "_id",
+			"as":           "member",
+		}}},
+		{{Key: "$unwind", Value: "$member"}},
+		// Project
+		{{Key: "$project", Value: bson.M{
+			"id":           "$_id",
+			"bookTitle":    "$book.title",
+			"bookId":       "$book._id",
+			"copyId":       1,
+			"memberName":   "$member.fullName",
+			"memberEmail":  "$member.email",
+			"borrowedAt":   1,
+			"dueDate":      1,
+			"status":       1,
+		}}},
+		{{Key: "$sort", Value: bson.M{"dueDate": 1}}}, // Due soonest first
+	}
+
+	cursor, err := config.GetCollection("loans").Aggregate(ctx, pipeline)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	defer cursor.Close(ctx)
+
+	var results []bson.M
 	if err = cursor.All(ctx, &results); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return

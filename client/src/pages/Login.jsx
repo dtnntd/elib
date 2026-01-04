@@ -28,18 +28,18 @@ export default function Login() {
     };
 
     return (
-        <div className="flex min-h-screen items-center justify-center p-4">
-            <div className="w-full max-w-md space-y-8 rounded-2xl bg-white/5 p-8 shadow-2xl backdrop-blur-xl ring-1 ring-white/10 sm:p-10">
+        <div className="flex min-h-screen items-center justify-center p-4 bg-gradient-to-br from-slate-50 to-slate-100">
+            <div className="w-full max-w-md space-y-8 rounded-2xl bg-white p-8 shadow-2xl ring-1 ring-slate-200 sm:p-10">
 
                 {/* Header */}
                 <div className="text-center">
                     <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-xl bg-gradient-to-br from-cyan-400 to-blue-600 shadow-lg shadow-cyan-500/20">
                         <BookOpen className="h-7 w-7 text-white" />
                     </div>
-                    <h2 className="mt-6 text-3xl font-bold tracking-tight text-white">
+                    <h2 className="mt-6 text-3xl font-bold tracking-tight text-slate-900">
                         Welcome back
                     </h2>
-                    <p className="mt-2 text-sm text-slate-400">
+                    <p className="mt-2 text-sm text-slate-600">
                         Sign in to access your digital library
                     </p>
                 </div>
@@ -47,7 +47,7 @@ export default function Login() {
                 {/* Form */}
                 <form className="mt-8 space-y-6" onSubmit={handleSubmit}>
                     {error && (
-                        <div className="rounded-lg bg-red-500/10 p-3 text-sm text-red-500 ring-1 ring-red-500/20">
+                        <div className="rounded-lg bg-red-50 p-3 text-sm text-red-700 ring-1 ring-red-200">
                             {error}
                         </div>
                     )}
@@ -63,7 +63,7 @@ export default function Login() {
                                 required
                                 value={email}
                                 onChange={(e) => setEmail(e.target.value)}
-                                className="w-full rounded-lg border-0 bg-slate-800/50 p-3 text-white placeholder-slate-400 ring-1 ring-white/10 transition focus:bg-slate-800 focus:ring-2 focus:ring-cyan-500 sm:text-sm"
+                                className="w-full rounded-lg border border-slate-300 bg-white p-3 text-slate-900 placeholder-slate-500 transition focus:border-cyan-500 focus:ring-2 focus:ring-cyan-500 focus:outline-none sm:text-sm"
                                 placeholder="Email address"
                             />
                         </div>
@@ -77,7 +77,7 @@ export default function Login() {
                                 required
                                 value={password}
                                 onChange={(e) => setPassword(e.target.value)}
-                                className="w-full rounded-lg border-0 bg-slate-800/50 p-3 text-white placeholder-slate-400 ring-1 ring-white/10 transition focus:bg-slate-800 focus:ring-2 focus:ring-cyan-500 sm:text-sm"
+                                className="w-full rounded-lg border border-slate-300 bg-white p-3 text-slate-900 placeholder-slate-500 transition focus:border-cyan-500 focus:ring-2 focus:ring-cyan-500 focus:outline-none sm:text-sm"
                                 placeholder="Password"
                             />
                         </div>
@@ -89,14 +89,14 @@ export default function Login() {
                                 id="remember-me"
                                 name="remember-me"
                                 type="checkbox"
-                                className="h-4 w-4 rounded border-slate-700 bg-slate-800 text-cyan-500 focus:ring-cyan-500"
+                                className="h-4 w-4 rounded border-slate-300 text-cyan-600 focus:ring-cyan-500"
                             />
-                            <label htmlFor="remember-me" className="ml-2 block text-sm text-slate-400">
+                            <label htmlFor="remember-me" className="ml-2 block text-sm text-slate-700">
                                 Remember me
                             </label>
                         </div>
                         <div className="text-sm">
-                            <a href="#" className="font-medium text-cyan-400 hover:text-cyan-300">
+                            <a href="#" className="font-medium text-cyan-600 hover:text-cyan-500">
                                 Forgot password?
                             </a>
                         </div>
@@ -105,7 +105,7 @@ export default function Login() {
                     <button
                         type="submit"
                         disabled={pending}
-                        className="group relative flex w-full justify-center rounded-lg bg-gradient-to-r from-cyan-500 to-blue-600 px-4 py-3 text-sm font-semibold text-white shadow-lg shadow-cyan-500/20 transition-all hover:scale-[1.02] hover:shadow-cyan-500/30 focus:outline-none focus:ring-2 focus:ring-cyan-500 focus:ring-offset-2 focus:ring-offset-slate-900 disabled:cursor-not-allowed disabled:opacity-70"
+                        className="group relative flex w-full justify-center rounded-lg bg-gradient-to-r from-cyan-500 to-blue-600 px-4 py-3 text-sm font-semibold text-white shadow-lg shadow-cyan-500/30 transition-all hover:scale-[1.02] hover:shadow-cyan-500/40 focus:outline-none focus:ring-2 focus:ring-cyan-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-70"
                     >
                         {pending ? (
                             <Loader2 className="animate-spin h-5 w-5" />
@@ -115,9 +115,9 @@ export default function Login() {
                     </button>
                 </form>
 
-                <p className="text-center text-sm text-slate-400">
+                <p className="text-center text-sm text-slate-600">
                     Don't have an account?{' '}
-                    <Link to="/register" className="font-medium text-cyan-400 hover:text-cyan-300">
+                    <Link to="/register" className="font-medium text-cyan-600 hover:text-cyan-500">
                         Sign up for free
                     </Link>
                 </p>
