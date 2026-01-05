@@ -33,3 +33,7 @@ coverage/
 tests/output/
 borrow_*.json
 verify_*.py
+
+# temp
+server/tmp/
+
