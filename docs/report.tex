@@ -1,8 +1,8 @@
 \documentclass[a4paper,12pt]{article}
 \usepackage{fontspec}
-\setmainfont{FreeSerif}
-\setsansfont{FreeSans}
-\setmonofont{FreeMono}
+\setmainfont{Times New Roman}
+\setsansfont{Arial}
+\setmonofont{Courier New}
 
 % Manual Vietnamese localization (since babel-vietnamese is missing)
 \renewcommand{\contentsname}{Mục lục}
@@ -11,14 +11,17 @@
 \renewcommand{\figurename}{Hình}
 \renewcommand{\tablename}{Bảng}
 \renewcommand{\refname}{Tài liệu tham khảo}
+\usepackage[ddmmyyyy]{datetime}
+\renewcommand{\dateseparator}{/}
 \usepackage{graphicx}
-\usepackage{hyperref}
+\usepackage[colorlinks=true, linkcolor=black, urlcolor=blue, citecolor=black]{hyperref}
 \usepackage{listings}
 \usepackage{xcolor}
 \usepackage{float}
 \usepackage{geometry}
 \usepackage{tabularx}
 \usepackage{amsmath}
+\usepackage{fancyhdr}
 
 % Page Geometry
 \geometry{
@@ -26,12 +29,25 @@
  total={170mm,257mm},
  left=20mm,
  top=20mm,
+ headheight=15pt,
 }
+
+% Header Configuration
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[L]{dtn\_elib}
+\fancyhead[R]{\thepage}
+\renewcommand{\headrulewidth}{0.4pt}
 
 % Code Listing Style
 \definecolor{codegray}{rgb}{0.5,0.5,0.5}
 \definecolor{codepurple}{rgb}{0.58,0,0.82}
 \definecolor{backcolour}{rgb}{0.95,0.95,0.92}
+
+% Custom colors for highlighting
+\definecolor{darkblue}{rgb}{0.0,0.2,0.6}
+\definecolor{darkgreen}{rgb}{0.0,0.5,0.0}
+\definecolor{darkred}{rgb}{0.7,0.0,0.0}
 
 \lstdefinestyle{mystyle}{
     backgroundcolor=\color{backcolour},   
@@ -83,26 +99,39 @@
 
 % Metadata
 \title{\textbf{BÁO CÁO TỔNG HỢP DỰ ÁN CUỐI KỲ} \\ \Large HỆ THỐNG THƯ VIỆN ĐIỆN TỬ PHÂN TÁN (E-LIBRARY)}
-\author{\textbf{Nhóm Thực Hiện:} \\ Nguyễn Tiến Đạt \\ Đặng Trung Kiên \\ Nguyễn Diệp Linh}
-\date{\today}
+\author{\textbf{Nhóm Sinh viên:} \\ Nguyễn Tiến Đạt - 835151465 \\ Đặng Trung Kiên - 835151466 \\ Nguyễn Diệp Linh - 835151467}
+\date{Ngày 05 tháng 01 năm 2026}
 
 \begin{document}
 
 \maketitle
 
+\vspace{1cm}
+\begin{center}
+{\large \textbf{Link Dự án:}} \\
+\vspace{0.3cm}
+{\large \url{https://bitbucket.org/dtn__ntd/elib/src/dtn_elib/}}
+\end{center}
+
 \tableofcontents
+\newpage
+
+\listoffigures
+\newpage
+
+\listoftables
 \newpage
 
 % -------------------------------------------------------------------
 \section{Giới thiệu \& Mục tiêu Hệ thống}
 
-\textbf{E-Library} là hệ thống thư viện kỹ thuật số phân tán, quản lý toàn diện vòng đời sách (Vật lý \& Điện tử) trên quy mô lớn.
+{\color{darkblue}\textbf{E-Library}} là hệ thống thư viện kỹ thuật số phân tán, quản lý toàn diện vòng đời sách (Vật lý \& Điện tử) trên quy mô lớn.
 
 \subsection{Mục tiêu Chính}
 \begin{itemize}
-    \item \textbf{Sharded Cluster}: Phân tán dữ liệu users/loans theo địa lý (Hà Nội, Hải Phòng, Đà Nẵng).
-    \item \textbf{High Availability}: Đảm bảo failover tự động trong 2-3s nhờ Replica Set.
-    \item \textbf{Phỏng theo Kinh doanh số}: Mô hình membership hiện đại với tính năng Sách điện tử, Ví và Gói VIP.
+    \item {\color{darkblue}\textbf{Sharded Cluster}}: Phân tán dữ liệu users/loans theo địa lý (Hà Nội, Hải Phòng, Đà Nẵng).
+    \item {\color{darkgreen}\textbf{High Availability}}: Đảm bảo failover tự động trong 2-3s nhờ Replica Set.
+    \item {\color{darkblue}\textbf{Phỏng theo Kinh doanh số}}: Mô hình membership hiện đại với tính năng Sách điện tử, Ví và Gói VIP.
 \end{itemize}
 
 \subsection{Phạm vi Dự án (Scope)}
