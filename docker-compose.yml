@@ -185,8 +185,6 @@ services:
       - "8081:8081"
     volumes:
       - ./server:/app
-      - ./server/go.mod:/app/go.mod
-      - ./server/go.sum:/app/go.sum
     environment:
       - MONGO_URI=mongodb://mongos1:27020
       - DB_NAME=elibrary

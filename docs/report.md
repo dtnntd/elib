@@ -461,7 +461,7 @@ Hệ thống phân biệt rõ hai mô hình bản quyền sách số, ảnh hư�
 ### 5.4 Mua Gói VIP (Wallet Transaction)
 ![Quy trình Nạp/Đăng ký VIP](img/chart_vip.png)
   <p><i>Hình 5.3: Quy trình Nạp/Đăng ký VIP</i></p>
-
+x
 ---
 
 ## 6. Minh chứng Giao diện (UI Views)

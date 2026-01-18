@@ -602,51 +602,89 @@ func ConfirmPickup(c *gin.Context) {
 	defer cancel()
 	loanColl := config.GetCollection("loans")
 
-	// Find RESERVED loan
-	// Use bson.M to capture EXACT Shard Key values (especially borrowedAt) without Type Conversion loss
-	var rawLoan bson.M
-	if err := loanColl.FindOne(ctx, bson.M{"_id": objID, "status": "RESERVED"}).Decode(&rawLoan); err != nil {
-		fmt.Printf("[ConfirmPickup] FindOne failed for %s: %v\n", objID.Hex(), err)
-		c.JSON(http.StatusNotFound, gin.H{"error": "Loan not found (or not RESERVED)"})
+	// Transaction is required because we are modifying the Shard Key (borrowedAt).
+	// MongoDB does not allow updating Shard Key values via UpdateOne if they change.
+	// Strategy: Delete + Insert (Atomic within Transaction)
+
+	client := loanColl.Database().Client()
+	sess, err := client.StartSession()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to start session"})
 		return
 	}
+	defer sess.EndSession(ctx)
 
-	// Decode to Struct for Logic
-	var loan LoanPopulated
-	bsonBytes, _ := bson.Marshal(rawLoan)
-	bson.Unmarshal(bsonBytes, &loan)
+	_, err = sess.WithTransaction(ctx, func(sessCtx mongo.SessionContext) (interface{}, error) {
+		// 1. Find RESERVED loan (Locking/Reading)
+		var rawLoan bson.M
+		// Strict filter: ID + Status + Branch (Branch is part of SharKey, good to have)
+		if err := loanColl.FindOne(sessCtx, bson.M{"_id": objID, "status": "RESERVED"}).Decode(&rawLoan); err != nil {
+			return nil, fmt.Errorf("Loan not found or not RESERVED")
+		}
 
-	// 2. Update Status to BORROWED
-	update := bson.M{
-		"$set": bson.M{
-			"status":     "BORROWED",
-			"borrowedAt": time.Now(),
-			"dueDate":    time.Now().AddDate(0, 0, 14), // 2 weeks
-		},
-		"$unset": bson.M{"pickupAppointment": ""},
-	}
+		// 2. Prepare Data
+		var loan LoanPopulated
+		bsonBytes, _ := bson.Marshal(rawLoan)
+		bson.Unmarshal(bsonBytes, &loan)
 
-	// Filter MUST include Shard Key {branchId, borrowedAt}.
-	// Use RAW values from DB to guarantee match
-	shardFilter := bson.M{
-		"_id":        objID,
-		"branchId":   rawLoan["branchId"],
-		"borrowedAt": rawLoan["borrowedAt"],
-	}
+		// Shard Key Filter for Delete
+		shardFilter := bson.M{
+			"_id":        objID,
+			"branchId":   rawLoan["branchId"],
+			"borrowedAt": rawLoan["borrowedAt"], // Crucial: Old Shard Key Value
+		}
 
-	fmt.Printf("[ConfirmPickup] Updating %s with ShardKey: branch=%v, borrowed=%v\n", objID.Hex(), rawLoan["branchId"], rawLoan["borrowedAt"])
+		// 3. Delete Old Document
+		delRes, err := loanColl.DeleteOne(sessCtx, shardFilter)
+		if err != nil {
+			return nil, err
+		}
+		if delRes.DeletedCount == 0 {
+			return nil, fmt.Errorf("Failed to delete original document (Shard Key mismatch?)")
+		}
 
-	result, err := loanColl.UpdateOne(ctx, shardFilter, update)
+		// 4. Update Fields for New Document
+		loan.Status = "BORROWED"
+		now := time.Now()
+		loan.BorrowedAt = &now
+		dueDate := now.AddDate(0, 0, 14) // 2 weeks
+		loan.DueDate = &dueDate
+		loan.PickupAppointment = nil // Convert to nil/empty
+
+		// 5. Insert New Document
+		// We map back to bson to avoid any struct field loss, but here we can just insert the struct
+		// provided the struct tags are correct.
+		// NOTE: 'loan' is LoanPopulated which has extra fields "Book" and "AccessModel" that are NOT in DB.
+		// We should construct the DB model models.Loan to be safe.
+		
+		newLoanDB := models.Loan{
+			ID:         loan.ID,
+			MemberID:   loan.MemberID,
+			BookID:     loan.BookID,
+			CopyID:     loan.CopyID,
+			BranchID:   loan.BranchID,
+			ItemType:   loan.ItemType,
+			Status:     "BORROWED",
+			BorrowedAt: now,
+			DueDate:    dueDate,
+			// PickupAppointment is omitted (omitempty)
+		}
+
+		_, err = loanColl.InsertOne(sessCtx, newLoanDB)
+		if err != nil {
+			return nil, err
+		}
+
+		return nil, nil
+	})
 
 	if err != nil {
-		fmt.Printf("UpdateOne Error: %v\n", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to confirm pickup"})
-		return
-	}
-
-	if result.MatchedCount == 0 {
-		fmt.Printf("[ConfirmPickup] Failed to match doc %s. Filter: branch=%s, borrowedAt=nil\n", objID.Hex(), loan.BranchID)
-		c.JSON(http.StatusNotFound, gin.H{"error": "Update failed: Loan not found or shard key mismatch"})
+		fmt.Printf("[ConfirmPickup] Transaction failed: %v\n", err)
+		if err.Error() == "Loan not found or not RESERVED" {
+			c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+		} else {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Transaction failed: " + err.Error()})
+		}
 		return
 	}
 
