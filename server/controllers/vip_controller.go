@@ -161,10 +161,12 @@ func PurchaseVIP(c *gin.Context) {
 	// Update member
 	update := bson.M{
 		"$set": bson.M{
-			"isVip":         true,
-			"vipExpiresAt":  expiresAt,
-			"vipType":       "PURCHASED",
-			"walletBalance": member.WalletBalance - selectedPackage.Price,
+			"isVip":               true,
+			"vipExpiresAt":        expiresAt,
+			"vipType":             "PURCHASED",
+			"walletBalance":       member.WalletBalance - selectedPackage.Price,
+			"subscription.plan":   "VIP",
+			"subscription.active": true,
 		},
 	}
 

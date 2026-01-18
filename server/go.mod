@@ -1,8 +1,8 @@
 module elibrary-api
 
-go 1.23.0
+go 1.19
 
-toolchain go1.23.12
+
 
 require (
 	github.com/gin-contrib/cors v1.4.0

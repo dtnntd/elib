@@ -254,16 +254,119 @@ Hệ thống gồm 11 Container phối hợp hoạt động.
     \item \textbf{Search Engine}: Sử dụng \textbf{Inverted Index} và cơ chế Scatter-Gather để tìm kiếm song song trên toàn cụm.
 \end{enumerate}
 
+\subsection{Config Server Replica Set (cfgRS)}
+Config Servers là ``bộ não'' của cluster, lưu trữ toàn bộ metadata quan trọng.
+
+\begin{table}[H]
+\centering
+\begin{tabular}{|l|l|l|}
+\hline
+\textbf{Node} & \textbf{Port} & \textbf{Vai trò} \\
+\hline
+\texttt{cfg1} & :27117 & \textbf{PRIMARY} - Nhận writes \\
+\hline
+\texttt{cfg2} & :27118 & SECONDARY - Replicate \\
+\hline
+\texttt{cfg3} & :27119 & SECONDARY - Replicate \\
+\hline
+\end{tabular}
+\caption{Config Server Nodes}
+\end{table}
+
+\textbf{Dữ liệu lưu trữ bởi Config Servers:}
+\begin{itemize}
+    \item Danh sách Shards (\texttt{rsCity}, \texttt{rsExtra})
+    \item Shard Key của từng collection
+    \item Chunk ranges và phân bố dữ liệu
+    \item Zone configurations (Zone MAIN $\rightarrow$ rsCity)
+\end{itemize}
+
+\textit{Lưu ý: Mất Config Servers = Mất toàn bộ cluster (không biết data ở đâu). Đây là thành phần quan trọng nhất cần backup thường xuyên.}
+
 % -------------------------------------------------------------------
 \section{Thiết kế Dữ liệu \& API}
 
 \subsection{Lược đồ Quan hệ (ERD)}
-Mô tả mối quan hệ giữa các Collection trong hệ thống.
+Mô tả mối quan hệ giữa 10 Collection trong hệ thống.
 \begin{figure}[H]
     \centering
-    \includegraphics[width=0.9\linewidth]{img/chart_erd.png}
-    \caption{Entity Relationship Diagram (Mermaid)}
+    \includegraphics[width=0.9\linewidth]{img/erd.png}
+    \caption{Entity Relationship Diagram - 10 Collections}
 \end{figure}
+
+\subsection{Chiến lược Sharding \& Phân bố Dữ liệu}
+Hệ thống sử dụng \textbf{Zone Sharding} để đảm bảo Data Locality - dữ liệu của 3 chi nhánh (HN, HP, DN) được ghim vào Shard chính (\texttt{rsCity}).
+
+\begin{table}[H]
+\centering
+\begin{tabular}{|l|l|l|l|}
+\hline
+\textbf{Shard} & \textbf{Nodes} & \textbf{Vai trò} & \textbf{Dữ liệu} \\
+\hline
+\textbf{rsCity} & hn1, hp1, dn1 & Primary Shard & 100\% data (Zone MAIN) \\
+\hline
+\textbf{rsExtra} & ex1, ex2 & Expansion & Trống (Standby) \\
+\hline
+\end{tabular}
+\caption{Phân bố Shard hiện tại}
+\end{table}
+
+\textbf{Chi tiết Sharding theo Collection:}
+\begin{table}[H]
+\centering
+\begin{tabularx}{\textwidth}{|l|l|l|X|}
+\hline
+\textbf{Collection} & \textbf{Sharded?} & \textbf{Shard Key} & \textbf{Lý do} \\
+\hline
+\texttt{loans} & $\checkmark$ & \texttt{\{branchId, borrowedAt\}} & Locality + thời gian \\
+\hline
+\texttt{physical\_copies} & $\checkmark$ & \texttt{\{branchId, \_id\}} & Locality theo chi nhánh \\
+\hline
+\texttt{events} & $\checkmark$ & \texttt{\{branchId, occurredAt\}} & Locality + query thời gian \\
+\hline
+\texttt{digital\_licenses} & $\checkmark$ & \texttt{\{branchId\}} & Locality theo chi nhánh \\
+\hline
+\texttt{inventory} & $\checkmark$ & \texttt{\{branchId\}} & Locality theo chi nhánh \\
+\hline
+\texttt{transactions} & $\checkmark$ & \texttt{\{branchId\}} & Locality theo chi nhánh \\
+\hline
+\texttt{members} & $\times$ & - & Unsharded (giữ UNIQUE email) \\
+\hline
+\texttt{books} & $\times$ & - & Reference data toàn cục \\
+\hline
+\texttt{branches} & $\times$ & - & Reference data (3 docs) \\
+\hline
+\end{tabularx}
+\caption{Chi tiết Sharding theo Collection}
+\end{table}
+
+\subsection{Chiến lược Đánh Index}
+\textbf{Nguyên tắc:}
+\begin{enumerate}
+    \item Mọi Shard Key phải có Index tương ứng.
+    \item Các trường thường query cần Index riêng.
+    \item Unique Index phải chứa Shard Key (trừ Unsharded collections).
+\end{enumerate}
+
+\begin{table}[H]
+\centering
+\begin{tabularx}{\textwidth}{|l|X|X|}
+\hline
+\textbf{Collection} & \textbf{Indexes} & \textbf{Mục đích} \\
+\hline
+\texttt{books} & \texttt{\_id}, \texttt{isbn} (UNIQUE), Text Index & Full-text search, tra ISBN \\
+\hline
+\texttt{members} & \texttt{\_id}, \texttt{email} (UNIQUE), \texttt{branchId} & Đăng nhập, query chi nhánh \\
+\hline
+\texttt{loans} & \texttt{\{branchId, borrowedAt\}}, \texttt{\{branchId, status, borrowedAt\}}, \texttt{\{memberId, status\}} & Shard key, Staff filter, User loans \\
+\hline
+\texttt{physical\_copies} & \texttt{\{branchId, \_id\}}, \texttt{\{branchId, status\}}, \texttt{barcode}, \texttt{bookId} & Shard key, inventory, scan \\
+\hline
+\texttt{events} & \texttt{\{branchId, occurredAt\}}, \texttt{memberId}, \texttt{type} & Shard key, history, filter \\
+\hline
+\end{tabularx}
+\caption{Chi tiết Index theo Collection}
+\end{table}
 
 \subsection{API Endpoints}
 \begin{table}[H]

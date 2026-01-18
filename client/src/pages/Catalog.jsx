@@ -15,6 +15,8 @@ export default function Catalog() {
     // Filters
     // Removed author state as it is integrated into main search
     const [language, setLanguage] = useState('');
+    const [bookType, setBookType] = useState(''); // '', 'physical', 'digital', 'digital-OCOU', 'digital-UNLIMITED', 'physical-HN', etc.
+    const [branch, setBranch] = useState(''); // For physical books: HN, HP, DN
     const [year, setYear] = useState('');
     const [subject, setSubject] = useState('');
 
@@ -33,7 +35,9 @@ export default function Catalog() {
                 q: debouncedSearch,
                 language,
                 year,
-                subject
+                subject,
+                bookType,
+                branch
             });
             const res = await api.get(`/books?${params.toString()}`);
             const booksData = res.data.data || [];
@@ -49,7 +53,7 @@ export default function Catalog() {
 
     useEffect(() => {
         fetchBooks();
-    }, [page, debouncedSearch, language, year, subject]);
+    }, [page, debouncedSearch, language, year, subject, bookType, branch]);
 
     return (
         <div className="space-y-6">
@@ -70,7 +74,37 @@ export default function Catalog() {
                 </div>
 
                 {/* Advanced Filters */}
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                <div className="grid grid-cols-2 md:grid-cols-6 gap-4">
+                    <select
+                        value={bookType}
+                        onChange={e => {
+                            setBookType(e.target.value);
+                            if (!e.target.value.startsWith('physical')) setBranch('');
+                        }}
+                        className="bg-white border border-slate-200 rounded-lg px-4 py-2 text-sm text-slate-700 focus:outline-none focus:border-cyan-500"
+                    >
+                        <option value="">All Types</option>
+                        <optgroup label="📚 Physical Books">
+                            <option value="physical">All Physical</option>
+                        </optgroup>
+                        <optgroup label="📱 Digital Books">
+                            <option value="digital">All Digital</option>
+                            <option value="digital-OCOU">OCOU (Limited)</option>
+                            <option value="digital-UNLIMITED">Unlimited</option>
+                        </optgroup>
+                    </select>
+                    {bookType.startsWith('physical') && (
+                        <select
+                            value={branch}
+                            onChange={e => setBranch(e.target.value)}
+                            className="bg-white border border-slate-200 rounded-lg px-4 py-2 text-sm text-slate-700 focus:outline-none focus:border-cyan-500"
+                        >
+                            <option value="">All Branches</option>
+                            <option value="HN">🏛️ Hà Nội</option>
+                            <option value="HP">🏛️ Hải Phòng</option>
+                            <option value="DN">🏛️ Đà Nẵng</option>
+                        </select>
+                    )}
                     <select
                         value={language}
                         onChange={e => setLanguage(e.target.value)}

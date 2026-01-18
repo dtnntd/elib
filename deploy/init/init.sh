@@ -132,16 +132,31 @@ mongosh --host mongos1:27020 --quiet --eval '
   }
 
   try {
-    // Digital licenses: Global hashed sharding (or branch if scoped)
-    // plan.md suggested { branchId: 1, _id: 1 } or hashed. Let us use hashed(_id) for global distribution demo
-    // But since plan.md explicitly discussed branch scope for licenses too, let us stick to branchId for consistency first,
-    // OR allow hashed. plan.md says: "Nếu license toàn hệ thống: hashed(_id)". 
-    // Let us use hashed(_id) to demonstrate a different sharding strategy.
-    sh.shardCollection("elibrary.digital_licenses", { _id: "hashed" });
-    print("✓ digital_licenses sharded (hashed)");
+    // Digital licenses: Shard by branchId (Zone Sharding for locality)
+    sh.shardCollection("elibrary.digital_licenses", { branchId: 1 });
+    print("✓ digital_licenses sharded");
   } catch(e) {
     print("! digital_licenses already sharded: " + e.message);
   }
+
+  try {
+    // Inventory: Shard by branchId (Branch locality)
+    sh.shardCollection("elibrary.inventory", { branchId: 1 });
+    print("✓ inventory sharded");
+  } catch(e) {
+    print("! inventory already sharded: " + e.message);
+  }
+
+  try {
+    // Transactions: Shard by branchId (Branch locality)
+    sh.shardCollection("elibrary.transactions", { branchId: 1 });
+    print("✓ transactions sharded");
+  } catch(e) {
+    print("! transactions already sharded: " + e.message);
+  }
+
+  // NOTE: members collection is NOT sharded to keep UNIQUE email constraint
+  print("✓ members NOT sharded (keeps UNIQUE email index)");
 '
 
 # -----------------------------
@@ -151,12 +166,12 @@ echo ""
 echo ">>> Creating indexes..."
 mongosh --host mongos1:27020 elibrary --quiet --eval '
   // Books indexes
-  db.books.createIndex({ title: "text", authors: "text", subjects: "text", description: "text" });
+  db.books.createIndex({ title: "text", authors: "text", subjects: "text", description: "text", isbn: "text" });
   db.books.createIndex({ isbn: 1 }, { unique: true });
   
   // Physical Copies indexes
   db.physical_copies.createIndex({ branchId: 1, status: 1 });
-  db.physical_copies.createIndex({ barcode: 1 }, { unique: true }); // Global unique barcode
+  db.physical_copies.createIndex({ barcode: 1 }); // Removed unique due to shard key conflict
   db.physical_copies.createIndex({ bookId: 1 });
   
   // Digital Licenses indexes

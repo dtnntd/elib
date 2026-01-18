@@ -14,11 +14,11 @@ export default function StaffDashboard() {
     const [itemsPerPage, setItemsPerPage] = useState(20);
     const [currentPage, setCurrentPage] = useState(1);
 
-    const fetchLoans = async (statusOverride) => {
+    const fetchLoans = async (statusOverride, silent = false) => {
         // Only fetch loans if in LOANS view
         if (viewMode !== 'LOANS') return;
 
-        setLoading(true);
+        if (!silent) setLoading(true);
         try {
             const params = {
                 sortBy: sortConfig.key,
@@ -27,11 +27,20 @@ export default function StaffDashboard() {
             if (statusOverride) params.status = statusOverride;
 
             const res = await api.get('/loans/all', { params });
-            setLoans(res.data);
+            if (Array.isArray(res.data)) {
+                setLoans(res.data);
+            } else {
+                console.error("API returned non-array:", res.data);
+                // Only alert if not silent, to avoid spam
+                if (!silent) alert("Unexpected data received from server");
+                setLoans([]); // Safely reset or keep previous? Reset safe.
+            }
         } catch (error) {
             console.error("Failed to fetch loans", error);
+            if (!silent) alert("Failed to fetch data: " + (error.response?.data?.error || error.message));
+            setLoans([]); // Prevent crash
         } finally {
-            setLoading(false);
+            if (!silent) setLoading(false);
         }
     };
 
@@ -40,10 +49,10 @@ export default function StaffDashboard() {
         fetchLoans(status);
 
         const interval = setInterval(() => {
-            fetchLoans(status);
+            fetchLoans(status, true); // Silent refresh
         }, 30000);
         return () => clearInterval(interval);
-    }, [filter, sortConfig, viewMode]); // Re-fetch when view changes back to LOANS
+    }, [filter, sortConfig, viewMode]);
 
     useEffect(() => {
         setCurrentPage(1);
@@ -66,13 +75,17 @@ export default function StaffDashboard() {
     const [returnCondition, setReturnCondition] = useState('GOOD');
 
     const handleCheckout = async (loanId) => {
-        if (!confirm("Confirm book pickup for this reservation?")) return;
+        // Optimistic UI: Remove item immediately
+        setLoans(current => current.filter(l => l.id !== loanId));
+
         try {
             await api.put(`/loans/checkout/${loanId}`);
-            alert("Pickup confirmed!");
-            fetchLoans(filter === 'OVERDUE' ? 'OVERDUE' : undefined);
+            // Background refresh to sync true state
+            fetchLoans(filter === 'ALL' ? undefined : filter, true);
         } catch (error) {
             alert("Failed to confirm pickup: " + (error.response?.data?.error || "Unknown error"));
+            // Rollback on error (refresh)
+            fetchLoans(filter === 'ALL' ? undefined : filter);
         }
     };
 
@@ -84,32 +97,39 @@ export default function StaffDashboard() {
 
     const confirmReturn = async () => {
         if (!selectedLoan) return;
+        const loanId = selectedLoan.id;
+
+        // Optimistic UI: Remove item immediately
+        setLoans(current => current.filter(l => l.id !== loanId));
+        setShowReturnModal(false);
+
         try {
-            const res = await api.put(`/loans/return/${selectedLoan.id}`, { condition: returnCondition });
+            const res = await api.put(`/loans/return/${loanId}`, { condition: returnCondition });
             const fine = res.data.fine;
             if (fine > 0) {
                 alert(`Return confirmed!\n\n⚠️ PLEASE COLLECT FINE: ${fine.toLocaleString()} VND`);
-            } else {
-                alert("Return confirmed!");
             }
-            setShowReturnModal(false);
-            fetchLoans(filter === 'OVERDUE' ? 'OVERDUE' : undefined);
+
+            fetchLoans(filter === 'ALL' ? undefined : filter, true);
         } catch (error) {
             alert("Failed to confirm return: " + (error.response?.data?.error || "Unknown error"));
+            fetchLoans(filter === 'ALL' ? undefined : filter); // Rollback
         }
     };
 
     const isLoanOverdue = (loan) => {
-        return (loan.status === 'BORROWED' || loan.status === 'ACTIVE') && new Date(loan.dueDate) < new Date();
+        return loan.status === 'OVERDUE' || ((loan.status === 'BORROWED' || loan.status === 'ACTIVE') && new Date(loan.dueDate) < new Date());
     };
 
     const filteredLoans = loans.filter(loan => {
         if (filter === 'ALL') return true;
-        if (filter === 'RETURNED') return loan.status === 'RETURNED';
-        if (filter === 'SCHEDULED') return loan.returnAppointment && loan.status !== 'RETURNED';
-        if (filter === 'CURRENT') return ['BORROWED', 'ACTIVE', 'OVERDUE'].includes(loan.status);
+        if (filter === 'RESERVED') return loan.status === 'RESERVED';
+        if (filter === 'BORROWED') return (loan.status === 'BORROWED' || loan.status === 'ACTIVE') && !isLoanOverdue(loan);
+        // Fix: Show ALL scheduled returns, even if overdue
+        if (filter === 'RETURNS') return loan.returnAppointment && loan.status !== 'RETURNED';
         if (filter === 'OVERDUE') return isLoanOverdue(loan);
-        return loan.status === filter;
+        if (filter === 'RETURNED') return loan.status === 'RETURNED';
+        return true;
     });
 
     const getStatusColor = (loan) => {
@@ -126,7 +146,7 @@ export default function StaffDashboard() {
 
     return (
         <div className="max-w-6xl mx-auto space-y-6">
-            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <div className="flex flex-col md:flex-row md:items-center justify-between">
                 <div className="flex items-center gap-4">
                     <h1 className="text-2xl font-bold text-slate-900 flex items-center gap-2">
                         <Monitor className="text-cyan-600" /> Staff Dashboard
@@ -214,7 +234,7 @@ export default function StaffDashboard() {
                                     <tr key={loan.id} className="hover:bg-slate-50 transition">
                                         <td className="px-6 py-4">
                                             <div className="font-mono text-xs text-slate-400 mb-1">{loan.id.slice(-6)}</div>
-                                            <div className="font-bold text-slate-900">{loan.book.title}</div>
+                                            <div className="font-bold text-slate-900">{loan.book?.title || "Unknown Book"}</div>
                                             <div className="text-xs text-slate-500">{loan.itemType}</div>
                                         </td>
                                         <td className="px-6 py-4">
@@ -223,8 +243,8 @@ export default function StaffDashboard() {
                                             </span>
                                         </td>
                                         <td className="px-6 py-4">
-                                            <div className="text-slate-900 font-medium">{loan.member.fullName}</div>
-                                            <div className="text-xs text-slate-500">{loan.member.email}</div>
+                                            <div className="text-slate-900 font-medium">{loan.member?.fullName || "Unknown Member"}</div>
+                                            <div className="text-xs text-slate-500">{loan.member?.email || "No Email"}</div>
                                         </td>
                                         <td className="px-6 py-4">
                                             {loan.status === 'RESERVED' && (
@@ -264,13 +284,23 @@ export default function StaffDashboard() {
                                                     <>
                                                         <button
                                                             onClick={async () => {
-                                                                if (!confirm(`Renew due date for book "${loan.book.title}"? \nExtends 14 days from NOW.`)) return;
+                                                                const bookTitle = loan.book?.title || "Book";
+                                                                if (!confirm(`Renew due date for book "${bookTitle}"? \nExtends 14 days from NOW.`)) return;
+
+                                                                // Optimistic Update
+                                                                const newDate = new Date();
+                                                                newDate.setDate(newDate.getDate() + 14);
+                                                                setLoans(current => current.map(l =>
+                                                                    l.id === loan.id ? { ...l, dueDate: newDate.toISOString() } : l
+                                                                ));
+
                                                                 try {
                                                                     await api.put(`/loans/renew/${loan.id}`);
-                                                                    alert("Renewed successfully!");
-                                                                    fetchLoans(filter === 'OVERDUE' ? 'OVERDUE' : undefined);
+                                                                    // Silent refresh with CORRECT filter
+                                                                    fetchLoans(filter === 'ALL' ? undefined : filter, true);
                                                                 } catch (err) {
                                                                     alert("Failed to renew: " + (err.response?.data?.error || err.message));
+                                                                    fetchLoans(filter === 'ALL' ? undefined : filter); // Rollback
                                                                 }
                                                             }}
                                                             className="inline-flex items-center gap-1 rounded-md bg-blue-100 px-3 py-1.5 text-xs font-bold text-blue-700 ring-1 ring-inset ring-blue-200 hover:bg-blue-200 transition"

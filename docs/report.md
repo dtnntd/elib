@@ -145,43 +145,151 @@ Hệ thống sử dụng **MongoDB Text Index** (Full-text Search) thay vì Rege
 ## 4. Thiết kế Dữ liệu & API (Data & API)
 
 ### 4.1 Lược đồ Quan hệ (ERD)
-Mô tả mối quan hệ giữa các Collection trong hệ thống.
+Mô tả mối quan hệ giữa các Collection trong hệ thống (10 bảng).
 
 ```mermaid
 erDiagram
     BRANCHES ||--o{ PHYSICAL_COPIES : owns
+    BRANCHES ||--o{ INVENTORY : manages
+    BRANCHES ||--o{ EVENTS : logs
     BOOKS ||--o{ PHYSICAL_COPIES : defines
     BOOKS ||--o{ DIGITAL_LICENSES : has_license
     BOOKS ||--o{ INVENTORY : stock_count
 
     MEMBERS ||--o{ LOANS : makes
     MEMBERS ||--o{ TRANSACTIONS : performs
+    MEMBERS ||--o{ EVENTS : triggers
     
     PHYSICAL_COPIES ||--o{ LOANS : tied_to_physical
     DIGITAL_LICENSES ||--o{ LOANS : tied_to_digital
 
+    BOOKS {
+        string _id
+        string isbn "UNIQUE"
+        string title "TEXT INDEX"
+        array authors "TEXT INDEX"
+        array subjects "TEXT INDEX"
+    }
+    BRANCHES {
+        string _id "HN/HP/DN"
+        string city "UNIQUE"
+        string name
+    }
     MEMBERS {
         string _id
-        string branchId "SHARD KEY"
-        object subscription "VIP Info"
+        string email "UNIQUE"
+        string branchId
         int walletBalance
+        object subscription
     }
-    INVENTORY {
+    LOANS {
         string _id
-        string bookId
-        int availableCopies
+        string branchId "SHARD KEY"
+        date borrowedAt "SHARD KEY"
+        string status
+        string memberId
     }
     PHYSICAL_COPIES {
         string _id
+        string branchId "SHARD KEY"
         string barcode
+        string bookId
         string status
     }
     DIGITAL_LICENSES {
         string _id
-        string accessModel "OCOU/UNLIMITED"
-        int concurrentLimit
+        string branchId "SHARD KEY"
+        string bookId
+        string accessModel
+    }
+    INVENTORY {
+        string _id
+        string branchId "SHARD KEY"
+        string bookId
+        int availableCopies
+    }
+    EVENTS {
+        string _id
+        string branchId "SHARD KEY"
+        date occurredAt "SHARD KEY"
+        string type
+        string memberId
+    }
+    TRANSACTIONS {
+        string _id
+        string branchId "SHARD KEY"
+        string memberId
+        int amount
+        string type
     }
 ```
+
+### 4.1.1 Chiến lược Sharding & Phân bố Dữ liệu
+
+Hệ thống sử dụng **Zone Sharding** để đảm bảo Data Locality - dữ liệu của 3 chi nhánh (HN, HP, DN) được ghim vào Shard chính (`rsCity`).
+
+**Phân bố Shard hiện tại:**
+
+| Shard | Nodes | Vai trò | Dữ liệu |
+|-------|-------|---------|---------|
+| **rsCity** | hn1, hp1, dn1 | Primary Shard | 100% data (Zone MAIN) |
+| **rsExtra** | ex1, ex2 | Expansion | Trống (Standby) |
+
+**Chi tiết Sharding theo Collection:**
+
+| Collection | Sharded? | Shard Key | Lý do |
+|------------|----------|-----------|-------|
+| `loans` | ✅ | `{branchId: 1, borrowedAt: 1}` | Locality theo chi nhánh + thời gian |
+| `physical_copies` | ✅ | `{branchId: 1, _id: 1}` | Locality theo chi nhánh |
+| `events` | ✅ | `{branchId: 1, occurredAt: 1}` | Locality + query theo thời gian |
+| `digital_licenses` | ✅ | `{branchId: 1}` | Locality theo chi nhánh |
+| `inventory` | ✅ | `{branchId: 1}` | Locality theo chi nhánh |
+| `transactions` | ✅ | `{branchId: 1}` | Locality theo chi nhánh |
+| `members` | ❌ | - | Unsharded (giữ UNIQUE email) |
+| `books` | ❌ | - | Reference data toàn cục |
+| `branches` | ❌ | - | Reference data (3 docs) |
+
+**Cơ chế Zone Sharding:**
+```javascript
+// Zone "MAIN" được gán cho rsCity
+sh.addShardTag("rsCity", "MAIN");
+
+// Tất cả branchId HN/HP/DN được ghim vào Zone MAIN
+sh.addTagRange("elibrary.loans", {branchId: "HN"}, {branchId: "HN\xff"}, "MAIN");
+sh.addTagRange("elibrary.loans", {branchId: "HP"}, {branchId: "HP\xff"}, "MAIN");
+sh.addTagRange("elibrary.loans", {branchId: "DN"}, {branchId: "DN\xff"}, "MAIN");
+```
+
+### 4.1.2 Chiến lược Đánh Index
+
+**Nguyên tắc đánh Index:**
+1. Mọi Shard Key phải có Index tương ứng
+2. Các trường thường query cần Index riêng
+3. Unique Index phải chứa Shard Key (trừ Unsharded collections)
+
+**Chi tiết Index theo Collection:**
+
+| Collection | Indexes | Mục đích |
+|------------|---------|----------|
+| **books** | `{_id: 1}`, `{isbn: 1}` UNIQUE, Text Index (title, authors, subjects) | Tìm kiếm Full-text, tra cứu ISBN |
+| **members** | `{_id: 1}`, `{email: 1}` UNIQUE, `{branchId: 1}` | Đăng nhập theo email, query theo chi nhánh |
+| **loans** | `{branchId: 1, borrowedAt: 1}`, `{branchId: 1, status: 1, borrowedAt: -1}`, `{memberId: 1, status: 1}` | Shard key, Staff dashboard filter, User loans |
+| **physical_copies** | `{branchId: 1, _id: 1}`, `{branchId: 1, status: 1}`, `{barcode: 1}`, `{bookId: 1}` | Shard key, inventory check, scan barcode |
+| **events** | `{branchId: 1, occurredAt: 1}`, `{memberId: 1}`, `{type: 1}` | Shard key, user history, filter by type |
+| **digital_licenses** | `{branchId: 1}`, `{bookId: 1}` | Shard key, license lookup |
+| **branches** | `{_id: 1}`, `{city: 1}` UNIQUE | Lookup, city constraint |
+
+**Explain Plan Example (Text Search):**
+```json
+{
+  "executionStats": {
+    "executionTimeMillis": 2,
+    "totalDocsExamined": 2,
+    "executionStages": { "stage": "TEXT_MATCH" }
+  }
+}
+```
+So với Regex Search: 24ms, 10015 docs examined → Text Index nhanh hơn **12 lần**.
 
 ### 4.2 API Endpoints & CRUD
 Hệ thống cung cấp RESTful API chuẩn:
@@ -242,6 +350,57 @@ if search != "" {
 }
 ```
 *Cơ chế phân tán*: Khi lệnh này chạy trên `mongos`, Router sẽ phân tách từ khóa và gửi request song song tới 2 Shard (City & Extra). Shard nào có sách chứa từ khóa đó sẽ trả về. Router merge kết quả, sort theo `textScore` (độ phù hợp) và trả về Client.
+
+### 4.4 Tối ưu Lọc Cross-Shard (Reverse Lookup Pattern)
+
+Khi lọc sách theo loại (Physical/Digital) hoặc theo chi nhánh, hệ thống đối mặt với thách thức hiệu năng nghiêm trọng do phải thực hiện **Cross-Shard Lookup** trên toàn bộ 10,000+ sách.
+
+**Vấn đề ban đầu:**
+```go
+// Cách tiếp cận naive: Lookup từ books → physical_copies (RẤT CHẬM!)
+pipeline = []bson.D{
+    {"$match", matchStage},              // 10,000 sách
+    {"$lookup", physical_copies},        // Cross-shard lookup cho MỖI sách → Timeout 10s!
+    {"$match", {"copies": {$ne: []}}},
+}
+```
+*Kết quả*: Timeout sau 10 giây do phải thực hiện lookup riêng lẻ trên từng document.
+
+**Giải pháp: Reverse Lookup Pattern**
+
+Thay vì lookup từ `books` sang `physical_copies`, chúng tôi đảo ngược quy trình:
+1. **Bước 1**: Dùng `Distinct()` trên collection có index (`physical_copies.branchId` hoặc `digital_licenses.accessModel`) để lấy danh sách `bookId`.
+2. **Bước 2**: Filter `books` bằng `$in: bookIds` (sử dụng index `_id`).
+3. **Bước 3**: Paginate và lookup thông tin bổ sung chỉ cho 12 sách hiển thị.
+
+```go
+// Reverse Lookup: Lấy bookIds từ collection đã được index trước
+if bookType == "physical" {
+    copyFilter := bson.M{"status": bson.M{"$ne": "LOST"}}
+    if branch != "" {
+        copyFilter["branchId"] = branch  // Sử dụng index branchId_1
+    }
+    
+    // Distinct() rất nhanh nhờ index!
+    pcColl := config.GetCollection("physical_copies")
+    bookIDs, _ := pcColl.Distinct(ctx, "bookId", copyFilter)
+    
+    // Filter books bằng $in (dùng index _id)
+    matchStage["_id"] = bson.M{"$in": bookIDs}
+}
+```
+
+**Kết quả Benchmark:**
+| Loại Filter | Trước (Cross-Shard Lookup) | Sau (Reverse Lookup) | Cải thiện |
+|-------------|---------------------------|---------------------|-----------|
+| Digital | Timeout 10s | **0.12s** | ~83x nhanh hơn |
+| Digital-OCOU | Timeout 10s | **0.076s** | ~131x nhanh hơn |
+| Physical + Branch | Timeout 10s | **0.35s** | ~28x nhanh hơn |
+
+**Nguyên lý hoạt động:**
+- `Distinct()` trên collection được shard theo `branchId` chỉ cần query tới 1 shard (Zone Sharding).
+- Kết quả trả về là danh sách `ObjectId` nhỏ gọn, không cần transfer toàn bộ document.
+- Filter `$in` trên `books._id` sử dụng B-tree index, thực hiện trong O(log n) thay vì O(n).
 
 ---
 

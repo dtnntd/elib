@@ -1,9 +1,9 @@
 import { useState, useEffect } from 'react';
 import {
     BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
-    PieChart, Pie, Cell, Legend
+    PieChart, Pie, Cell, Legend, LineChart, Line
 } from 'recharts';
-import { Loader2, TrendingUp, Users, BookOpen, DollarSign, Building, Search, AlertCircle, Clock, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Loader2, TrendingUp, Users, BookOpen, DollarSign, Building, Search, AlertCircle, Clock, ChevronLeft, ChevronRight, Crown, AlertTriangle, BarChart3 } from 'lucide-react';
 import api from '../api/axios';
 import { cn } from '../lib/utils';
 import { useAuth } from '../context/AuthContext';
@@ -22,7 +22,17 @@ export default function StatsDashboard() {
     const [circulation, setCirculation] = useState([]);
     const [loading, setLoading] = useState(true);
     const [selectedBranch, setSelectedBranch] = useState(user?.role === 'ADMIN' ? '' : user?.branchId || '');
-    const [activeTab, setActiveTab] = useState('OVERVIEW'); // OVERVIEW, MEMBERS, CIRCULATION
+    const [activeTab, setActiveTab] = useState('OVERVIEW'); // OVERVIEW, ANALYTICS, MEMBERS, CIRCULATION, REPORTS
+
+    // New data states
+    const [topSubjects, setTopSubjects] = useState([]);
+    const [memberTypes, setMemberTypes] = useState([]);
+    const [loansByBranch, setLoansByBranch] = useState([]);
+    const [inventoryByBranch, setInventoryByBranch] = useState([]);
+    const [revenueTrend, setRevenueTrend] = useState([]);
+    const [topBooks, setTopBooks] = useState([]);
+    const [overdueSummary, setOverdueSummary] = useState([]);
+    const [expiringVIP, setExpiringVIP] = useState([]);
 
     // Pagination State
     const [itemsPerPage, setItemsPerPage] = useState(20);
@@ -49,12 +59,38 @@ export default function StatsDashboard() {
                     loans: item.count
                 }));
                 setTrends(formattedTrends);
+            } else if (activeTab === 'ANALYTICS') {
+                const [subjectsRes, memberTypesRes, loansBranchRes, inventoryRes, revenueRes] = await Promise.all([
+                    api.get('/stats/top-subjects'),
+                    api.get('/stats/member-types', { params }),
+                    api.get('/stats/loans-by-branch'),
+                    api.get('/stats/inventory-by-branch'),
+                    api.get('/stats/revenue-trend')
+                ]);
+                setTopSubjects(subjectsRes.data || []);
+                setMemberTypes(memberTypesRes.data || []);
+                setLoansByBranch(loansBranchRes.data || []);
+                setInventoryByBranch(inventoryRes.data || []);
+                const formattedRevenue = (revenueRes.data || []).map(item => ({
+                    name: `${item.month}/${item.year}`,
+                    revenue: item.revenue
+                }));
+                setRevenueTrend(formattedRevenue);
             } else if (activeTab === 'MEMBERS') {
                 const res = await api.get('/stats/members', { params });
                 setMembers(res.data);
             } else if (activeTab === 'CIRCULATION') {
                 const res = await api.get('/stats/circulation', { params });
                 setCirculation(res.data);
+            } else if (activeTab === 'REPORTS') {
+                const [topBooksRes, overdueRes, expiringRes] = await Promise.all([
+                    api.get('/stats/top-books', { params }),
+                    api.get('/stats/overdue-summary'),
+                    api.get('/stats/expiring-vip', { params })
+                ]);
+                setTopBooks(topBooksRes.data || []);
+                setOverdueSummary(overdueRes.data || []);
+                setExpiringVIP(expiringRes.data || []);
             }
 
         } catch (error) {
@@ -103,8 +139,8 @@ export default function StatsDashboard() {
             </div>
 
             {/* Tabs */}
-            <div className="flex gap-4 border-b border-slate-200">
-                {['OVERVIEW', 'MEMBERS', 'CIRCULATION'].map(tab => (
+            <div className="flex gap-4 border-b border-slate-200 overflow-x-auto">
+                {['OVERVIEW', 'ANALYTICS', 'MEMBERS', 'CIRCULATION', 'REPORTS'].map(tab => (
                     <button
                         key={tab}
                         onClick={() => setActiveTab(tab)}
@@ -113,8 +149,10 @@ export default function StatsDashboard() {
                         )}
                     >
                         {tab === 'OVERVIEW' && 'Overview'}
+                        {tab === 'ANALYTICS' && '📊 Analytics'}
                         {tab === 'MEMBERS' && 'Member Stats'}
                         {tab === 'CIRCULATION' && 'Active Circulation'}
+                        {tab === 'REPORTS' && '📋 Reports'}
                     </button>
                 ))}
             </div>
@@ -205,6 +243,116 @@ export default function StatsDashboard() {
                                                 <Tooltip contentStyle={{ backgroundColor: '#ffffff', borderColor: '#e2e8f0', color: '#1e293b', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }} />
                                                 <Legend verticalAlign="bottom" height={36} formatter={(value) => <span className="text-slate-600 font-medium">{value}</span>} />
                                             </PieChart>
+                                        </ResponsiveContainer>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* ANALYTICS TAB */}
+                    {activeTab === 'ANALYTICS' && (
+                        <div className="space-y-6 animate-in fade-in slide-in-from-bottom-2 duration-300">
+                            {/* Row 1: Revenue Trend */}
+                            <div className="bg-white border border-slate-200 rounded-xl p-6 shadow-sm">
+                                <h3 className="text-lg font-bold text-slate-800 mb-4 flex items-center gap-2">
+                                    <DollarSign className="h-5 w-5 text-emerald-600" /> Revenue Trend (Last 6 Months)
+                                </h3>
+                                <div className="h-[250px]">
+                                    <ResponsiveContainer width="100%" height="100%">
+                                        <LineChart data={revenueTrend}>
+                                            <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                                            <XAxis dataKey="name" fontSize={12} />
+                                            <YAxis fontSize={12} tickFormatter={(v) => `${(v / 1000).toFixed(0)}k`} />
+                                            <Tooltip formatter={(v) => `${v.toLocaleString()}đ`} />
+                                            <Line type="monotone" dataKey="revenue" stroke="#10b981" strokeWidth={3} dot={{ fill: '#10b981' }} />
+                                        </LineChart>
+                                    </ResponsiveContainer>
+                                </div>
+                            </div>
+
+                            {/* Row 2: Top Subjects + VIP/Basic */}
+                            <div className="grid md:grid-cols-2 gap-6">
+                                <div className="bg-white border border-slate-200 rounded-xl p-6 shadow-sm">
+                                    <h3 className="text-lg font-bold text-slate-800 mb-4 flex items-center gap-2">
+                                        <BookOpen className="h-5 w-5 text-cyan-600" /> Top Book Categories
+                                    </h3>
+                                    <div className="h-[280px]">
+                                        <ResponsiveContainer width="100%" height="100%">
+                                            <BarChart data={topSubjects} layout="vertical">
+                                                <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                                                <XAxis type="number" fontSize={12} />
+                                                <YAxis type="category" dataKey="name" width={120} fontSize={11} tickFormatter={(v) => v.length > 15 ? v.slice(0, 15) + '...' : v} />
+                                                <Tooltip />
+                                                <Bar dataKey="count" fill="#06b6d4" radius={[0, 4, 4, 0]} />
+                                            </BarChart>
+                                        </ResponsiveContainer>
+                                    </div>
+                                </div>
+
+                                <div className="bg-white border border-slate-200 rounded-xl p-6 shadow-sm">
+                                    <h3 className="text-lg font-bold text-slate-800 mb-4 flex items-center gap-2">
+                                        <Crown className="h-5 w-5 text-purple-600" /> VIP vs Basic Members
+                                    </h3>
+                                    <div className="h-[280px]">
+                                        <ResponsiveContainer width="100%" height="100%">
+                                            <PieChart>
+                                                <Pie
+                                                    data={memberTypes.map(m => ({ ...m, value: m.count }))}
+                                                    cx="50%"
+                                                    cy="50%"
+                                                    innerRadius={60}
+                                                    outerRadius={90}
+                                                    paddingAngle={5}
+                                                    dataKey="value"
+                                                    nameKey="name"
+                                                    label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
+                                                >
+                                                    <Cell fill="#8b5cf6" />
+                                                    <Cell fill="#94a3b8" />
+                                                </Pie>
+                                                <Tooltip />
+                                                <Legend />
+                                            </PieChart>
+                                        </ResponsiveContainer>
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* Row 3: Loans by Branch + Inventory by Branch */}
+                            <div className="grid md:grid-cols-2 gap-6">
+                                <div className="bg-white border border-slate-200 rounded-xl p-6 shadow-sm">
+                                    <h3 className="text-lg font-bold text-slate-800 mb-4 flex items-center gap-2">
+                                        <TrendingUp className="h-5 w-5 text-amber-600" /> Active Loans by Branch
+                                    </h3>
+                                    <div className="h-[250px]">
+                                        <ResponsiveContainer width="100%" height="100%">
+                                            <BarChart data={loansByBranch}>
+                                                <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                                                <XAxis dataKey="branch" fontSize={12} />
+                                                <YAxis fontSize={12} />
+                                                <Tooltip />
+                                                <Bar dataKey="count" fill="#f59e0b" radius={[4, 4, 0, 0]} />
+                                            </BarChart>
+                                        </ResponsiveContainer>
+                                    </div>
+                                </div>
+
+                                <div className="bg-white border border-slate-200 rounded-xl p-6 shadow-sm">
+                                    <h3 className="text-lg font-bold text-slate-800 mb-4 flex items-center gap-2">
+                                        <BarChart3 className="h-5 w-5 text-blue-600" /> Inventory by Branch
+                                    </h3>
+                                    <div className="h-[250px]">
+                                        <ResponsiveContainer width="100%" height="100%">
+                                            <BarChart data={inventoryByBranch}>
+                                                <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                                                <XAxis dataKey="branch" fontSize={12} />
+                                                <YAxis fontSize={12} />
+                                                <Tooltip />
+                                                <Legend />
+                                                <Bar dataKey="available" stackId="a" fill="#10b981" name="Available" />
+                                                <Bar dataKey="borrowed" stackId="a" fill="#f59e0b" name="Borrowed" />
+                                            </BarChart>
                                         </ResponsiveContainer>
                                     </div>
                                 </div>
@@ -312,6 +460,119 @@ export default function StatsDashboard() {
                                     onLimitChange={setItemsPerPage}
                                 />
                             )}
+                        </div>
+                    )}
+
+                    {/* REPORTS TAB */}
+                    {activeTab === 'REPORTS' && (
+                        <div className="space-y-6 animate-in fade-in slide-in-from-bottom-2 duration-300">
+                            {/* Top Borrowed Books */}
+                            <div className="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden">
+                                <div className="p-4 border-b border-slate-200 flex items-center gap-2">
+                                    <BookOpen className="h-5 w-5 text-cyan-600" />
+                                    <h3 className="font-bold text-slate-800">Top 10 Most Borrowed Books</h3>
+                                </div>
+                                <table className="w-full text-left text-sm text-slate-600">
+                                    <thead className="bg-slate-50 text-xs uppercase text-slate-500 border-b border-slate-200">
+                                        <tr>
+                                            <th className="px-6 py-3">#</th>
+                                            <th className="px-6 py-3">Book Title</th>
+                                            <th className="px-6 py-3">Authors</th>
+                                            <th className="px-6 py-3 text-right">Borrow Count</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-slate-100">
+                                        {topBooks.length === 0 ? (
+                                            <tr><td colSpan="4" className="px-6 py-8 text-center text-slate-400">No data available</td></tr>
+                                        ) : topBooks.map((book, idx) => (
+                                            <tr key={book.bookId} className="hover:bg-slate-50">
+                                                <td className="px-6 py-3 font-bold text-slate-400">{idx + 1}</td>
+                                                <td className="px-6 py-3 font-medium text-slate-900">{book.title}</td>
+                                                <td className="px-6 py-3 text-slate-500">{(book.authors || []).join(', ')}</td>
+                                                <td className="px-6 py-3 text-right">
+                                                    <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-bold bg-cyan-100 text-cyan-700">
+                                                        {book.count}
+                                                    </span>
+                                                </td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
+
+                            {/* Overdue Summary */}
+                            <div className="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden">
+                                <div className="p-4 border-b border-slate-200 flex items-center gap-2">
+                                    <AlertTriangle className="h-5 w-5 text-red-600" />
+                                    <h3 className="font-bold text-slate-800">Overdue Summary by Branch</h3>
+                                </div>
+                                <table className="w-full text-left text-sm text-slate-600">
+                                    <thead className="bg-slate-50 text-xs uppercase text-slate-500 border-b border-slate-200">
+                                        <tr>
+                                            <th className="px-6 py-3">Branch</th>
+                                            <th className="px-6 py-3 text-right">Overdue Count</th>
+                                            <th className="px-6 py-3 text-right">Est. Fine Amount</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-slate-100">
+                                        {overdueSummary.length === 0 ? (
+                                            <tr><td colSpan="3" className="px-6 py-8 text-center text-slate-400">No overdue loans 🎉</td></tr>
+                                        ) : overdueSummary.map(item => (
+                                            <tr key={item.branch} className="hover:bg-slate-50">
+                                                <td className="px-6 py-3 font-medium text-slate-900">{item.branch}</td>
+                                                <td className="px-6 py-3 text-right">
+                                                    <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-bold bg-red-100 text-red-700">
+                                                        {item.count}
+                                                    </span>
+                                                </td>
+                                                <td className="px-6 py-3 text-right font-mono text-red-600">
+                                                    {(item.totalFine || 0).toLocaleString()}đ
+                                                </td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
+
+                            {/* Expiring VIP */}
+                            <div className="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden">
+                                <div className="p-4 border-b border-slate-200 flex items-center gap-2">
+                                    <Crown className="h-5 w-5 text-purple-600" />
+                                    <h3 className="font-bold text-slate-800">VIP Subscriptions Expiring Within 30 Days</h3>
+                                </div>
+                                <table className="w-full text-left text-sm text-slate-600">
+                                    <thead className="bg-slate-50 text-xs uppercase text-slate-500 border-b border-slate-200">
+                                        <tr>
+                                            <th className="px-6 py-3">Member</th>
+                                            <th className="px-6 py-3">Branch</th>
+                                            <th className="px-6 py-3">Expires At</th>
+                                            <th className="px-6 py-3 text-right">Days Left</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-slate-100">
+                                        {expiringVIP.length === 0 ? (
+                                            <tr><td colSpan="4" className="px-6 py-8 text-center text-slate-400">No VIP subscriptions expiring soon</td></tr>
+                                        ) : expiringVIP.map(member => (
+                                            <tr key={member._id} className="hover:bg-slate-50">
+                                                <td className="px-6 py-3">
+                                                    <div className="font-medium text-slate-900">{member.fullName}</div>
+                                                    <div className="text-xs text-slate-500">{member.email}</div>
+                                                </td>
+                                                <td className="px-6 py-3">{member.branchId}</td>
+                                                <td className="px-6 py-3">{new Date(member.vipExpiresAt).toLocaleDateString()}</td>
+                                                <td className="px-6 py-3 text-right">
+                                                    <span className={cn("inline-flex items-center px-2 py-0.5 rounded-full text-xs font-bold",
+                                                        member.daysLeft <= 7 ? "bg-red-100 text-red-700" :
+                                                            member.daysLeft <= 14 ? "bg-amber-100 text-amber-700" : "bg-purple-100 text-purple-700"
+                                                    )}>
+                                                        {member.daysLeft} days
+                                                    </span>
+                                                </td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
                         </div>
                     )}
                 </>

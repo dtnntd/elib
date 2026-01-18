@@ -77,6 +77,15 @@ func main() {
 		stats.GET("/trends", controllers.GetMonthlyTrends)
 		stats.GET("/members", controllers.GetBranchMemberStats)
 		stats.GET("/circulation", controllers.GetBranchCirculationStats)
+		// New dashboard endpoints
+		stats.GET("/top-subjects", controllers.GetTopSubjects)
+		stats.GET("/member-types", controllers.GetMemberTypeStats)
+		stats.GET("/loans-by-branch", controllers.GetLoansByBranch)
+		stats.GET("/inventory-by-branch", controllers.GetInventoryByBranch)
+		stats.GET("/revenue-trend", controllers.GetRevenueTrend)
+		stats.GET("/top-books", controllers.GetTopBorrowedBooks)
+		stats.GET("/overdue-summary", controllers.GetOverdueSummary)
+		stats.GET("/expiring-vip", controllers.GetExpiringVIP)
 	}
 
 

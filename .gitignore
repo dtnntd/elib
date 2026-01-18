@@ -66,3 +66,6 @@ docker-compose.override.yml
 # Testing
 tests/__pycache__/
 *.pytest_cache/
+
+.agent/
+.claude/

@@ -52,7 +52,7 @@ const DashboardLayout = () => {
             {isStaff && (
               <>
                 <Link to="/staff" title="Staff Dashboard" className="flex items-center justify-center rounded-md p-2 text-slate-600 hover:bg-indigo-50 hover:text-indigo-600 transition">
-                  <LayoutDashboard className="h-5 w-5" />
+                  <LayoutDashboard className="h-4 w-4" /> <span className="hidden xl:inline">Dashboard</span>
                 </Link>
                 <Link to="/admin/members" className="flex items-center gap-1.5 rounded-md px-3 py-2 text-sm font-semibold text-slate-600 hover:bg-purple-50 hover:text-purple-600 transition whitespace-nowrap">
                   <Users className="h-4 w-4" /> <span className="hidden xl:inline">Members</span>
@@ -69,7 +69,7 @@ const DashboardLayout = () => {
             )}
 
             <Link to="/my-loans" title="My Shelf" className="flex items-center justify-center rounded-md p-2 text-slate-600 hover:bg-cyan-50 hover:text-cyan-600 transition">
-              <BookOpen className="h-5 w-5" />
+              <BookOpen className="h-4 w-4" /> <span className="hidden xl:inline">My Shelf</span>
             </Link>
             <Link to="/vip" className="flex items-center gap-1.5 rounded-full bg-gradient-to-r from-purple-500 to-pink-500 px-4 py-1.5 text-xs font-bold text-white shadow hover:shadow-md hover:scale-105 transition whitespace-nowrap ml-2">
               <Crown className="h-3.5 w-3.5" /> VIP

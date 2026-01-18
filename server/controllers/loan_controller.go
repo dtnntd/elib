@@ -311,13 +311,13 @@ type LoanPopulated struct {
 	BranchID   string             `bson:"branchId" json:"branchId"`
 	ItemType   string             `bson:"itemType" json:"itemType"`
 	Status     string             `bson:"status" json:"status"`
-	BorrowedAt time.Time          `bson:"borrowedAt" json:"borrowedAt"`
-	DueDate    time.Time          `bson:"dueDate" json:"dueDate"`
-	ReturnedAt      time.Time          `bson:"returnedAt" json:"returnedAt"`
+	BorrowedAt      *time.Time          `bson:"borrowedAt" json:"borrowedAt"`
+	DueDate         *time.Time          `bson:"dueDate" json:"dueDate"`
+	ReturnedAt      *time.Time          `bson:"returnedAt" json:"returnedAt"`
 	FineAmount      int                `bson:"fineAmount" json:"fineAmount"`
 	ReturnCondition string             `bson:"returnCondition" json:"returnCondition"`
-	PickupAppointment time.Time        `bson:"pickupAppointment" json:"pickupAppointment"`
-	ReturnAppointment time.Time        `bson:"returnAppointment" json:"returnAppointment"`
+	PickupAppointment *time.Time       `bson:"pickupAppointment" json:"pickupAppointment"`
+	ReturnAppointment *time.Time       `bson:"returnAppointment" json:"returnAppointment"`
 	Book            *models.Book       `bson:"book" json:"book"` // Populated (Pointer to handle null)
 	AccessModel     string             `bson:"accessModel" json:"accessModel"`  // From lookup
 }
@@ -459,11 +459,21 @@ func ReturnBook(c *gin.Context) {
 		// Digital: Just mark returned
 	}
 	
-	// 4. Update Loan Record
-	_, err = loanColl.UpdateOne(ctx, bson.M{"_id": objID}, bson.M{"$set": updateFields})
+	// 4. Update Loan Record (Include Shard Key for safe update)
+	result, err := loanColl.UpdateOne(
+		ctx, 
+		bson.M{"_id": objID, "branchId": loan.BranchID, "borrowedAt": loan.BorrowedAt}, 
+		bson.M{"$set": updateFields},
+	)
 	if err != nil {
 		fmt.Printf("UpdateOne Error: %v\n", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to return book"})
+		return
+	}
+	
+	if result.MatchedCount == 0 {
+		fmt.Printf("[ReturnBook] Failed to match doc %s. Shard Key mismatch?\n", objID.Hex())
+		c.JSON(http.StatusNotFound, gin.H{"error": "Return failed: Loan not found or shard key mismatch"})
 		return
 	}
 
@@ -592,30 +602,51 @@ func ConfirmPickup(c *gin.Context) {
 	defer cancel()
 	loanColl := config.GetCollection("loans")
 
-	var loan models.Loan
-	if err := loanColl.FindOne(ctx, bson.M{"_id": objID, "status": "RESERVED"}).Decode(&loan); err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "Loan not found or not in RESERVED status"})
+	// Find RESERVED loan
+	// Use bson.M to capture EXACT Shard Key values (especially borrowedAt) without Type Conversion loss
+	var rawLoan bson.M
+	if err := loanColl.FindOne(ctx, bson.M{"_id": objID, "status": "RESERVED"}).Decode(&rawLoan); err != nil {
+		fmt.Printf("[ConfirmPickup] FindOne failed for %s: %v\n", objID.Hex(), err)
+		c.JSON(http.StatusNotFound, gin.H{"error": "Loan not found (or not RESERVED)"})
 		return
 	}
 
-	// Update Status RESERVED -> BORROWED
+	// Decode to Struct for Logic
+	var loan LoanPopulated
+	bsonBytes, _ := bson.Marshal(rawLoan)
+	bson.Unmarshal(bsonBytes, &loan)
+
+	// 2. Update Status to BORROWED
 	update := bson.M{
 		"$set": bson.M{
 			"status":     "BORROWED",
 			"borrowedAt": time.Now(),
-			"dueDate":    time.Now().AddDate(0, 0, 14),
+			"dueDate":    time.Now().AddDate(0, 0, 14), // 2 weeks
 		},
+		"$unset": bson.M{"pickupAppointment": ""},
 	}
 
-	_, err := loanColl.UpdateOne(
-		ctx,
-		bson.M{"_id": objID, "memberId": loan.MemberID, "bookId": loan.BookID, "branchId": loan.BranchID, "borrowedAt": loan.BorrowedAt},
-		update,
-	)
+	// Filter MUST include Shard Key {branchId, borrowedAt}.
+	// Use RAW values from DB to guarantee match
+	shardFilter := bson.M{
+		"_id":        objID,
+		"branchId":   rawLoan["branchId"],
+		"borrowedAt": rawLoan["borrowedAt"],
+	}
+
+	fmt.Printf("[ConfirmPickup] Updating %s with ShardKey: branch=%v, borrowed=%v\n", objID.Hex(), rawLoan["branchId"], rawLoan["borrowedAt"])
+
+	result, err := loanColl.UpdateOne(ctx, shardFilter, update)
 
 	if err != nil {
 		fmt.Printf("UpdateOne Error: %v\n", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to confirm pickup"})
+		return
+	}
+
+	if result.MatchedCount == 0 {
+		fmt.Printf("[ConfirmPickup] Failed to match doc %s. Filter: branch=%s, borrowedAt=nil\n", objID.Hex(), loan.BranchID)
+		c.JSON(http.StatusNotFound, gin.H{"error": "Update failed: Loan not found or shard key mismatch"})
 		return
 	}
 
@@ -716,6 +747,8 @@ func GetAllLoans(c *gin.Context) {
 		}
 	}
 
+    skip := 0
+
 	// 1.5 Branch Filtering (Staff Only)
 	if user.Role == "STAFF" {
 		filter["branchId"] = user.BranchID
@@ -744,9 +777,10 @@ func GetAllLoans(c *gin.Context) {
 	// FIX: For RESERVED loans, borrowedAt is null (end of index).
 	// Using Fast Path (Index Sort) causes a full index scan timeout. 
 	// Force Slow Path (Match -> Lookup) to filter efficiently first.
-	if filter["status"] == "RESERVED" {
-		isNativeSort = false
-	}
+	// NOTE: Disabled manually to debug empty list issue. DB seems small enough or logic flawed.
+	// if filter["status"] == "RESERVED" {
+	// 	isNativeSort = false
+	// }
 
 	pipeline := mongo.Pipeline{}
 
@@ -756,6 +790,7 @@ func GetAllLoans(c *gin.Context) {
 	// 2. Sort & Limit (If Native - FAST PATH)
 	if isNativeSort {
 		pipeline = append(pipeline, bson.D{{Key: "$sort", Value: sortStage}})
+		pipeline = append(pipeline, bson.D{{Key: "$skip", Value: skip}})
 		pipeline = append(pipeline, bson.D{{Key: "$limit", Value: limit}})
 	}
 
@@ -802,7 +837,8 @@ func GetAllLoans(c *gin.Context) {
 	loans = []LoanWithMember{}
 
 	if err = cursor.All(ctx, &loans); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Error decoding loans"})
+		fmt.Printf("Cursor Decode Error: %v\n", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Error decoding loans: " + err.Error()})
 		return
 	}
 
