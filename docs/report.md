@@ -407,13 +407,47 @@ if bookType == "physical" {
 ## 5. Luồng Nghiệp vụ (Business Flows)
 
 ### 5.1 Mượn Sách Vật Lý (Atomic Inventory Check)
-\begin{figure}[H]
-    \centering
-    \includegraphics[width=0.9\linewidth]{img/chart_borrow.png}
-    \caption{Quy trình Mượn sách Vật lý (Sequence Diagram)}
-\end{figure}
+![Quy trình Mượn sách Vật lý](img/chart_borrow.png)
+  <p><i>Hình 5.1: Quy trình Mượn sách Vật lý (Sequence Diagram)</i></p>
 
-### 5.2 Mượn Sách Số (License & VIP Check)
+### 5.2 Các Trạng thái Phiếu Mượn (Loan Status States)
+
+Hệ thống quản lý vòng đời phiếu mượn sách qua 5 trạng thái chính:
+
+| Trạng thái | Ý nghĩa | Điều kiện chuyển |
+|------------|---------|------------------|
+| **RESERVED** | Đã đặt, chờ nhận sách | User đặt sách vật lý + hẹn lịch nhận (`pickupAppointment`) |
+| **SCHEDULED** | Đã hẹn lịch trả | User đặt lịch hẹn trả (`returnAppointment`) |
+| **BORROWED** / **ACTIVE** | Đang mượn | Staff xác nhận ConfirmPickup hoặc mượn sách điện tử ngay |
+| **OVERDUE** | Quá hạn | System tự động: `dueDate < now` và `status = BORROWED` |
+| **RETURNED** | Đã trả | Staff xác nhận nhận sách hoặc hệ thống tự động (digital) |
+
+**Luồng chuyển trạng thái - Sách Vật lý:**
+```
+User đặt sách → RESERVED
+    ↓ (Staff: ConfirmPickup)
+User nhận sách → BORROWED
+    ↓ (Qua dueDate)
+Quá hạn → OVERDUE
+    ↓ (Staff: ReturnBook)
+Trả sách → RETURNED
+```
+
+**Luồng chuyển trạng thái - Sách Điện tử:**
+```
+User mượn ngay → BORROWED/ACTIVE
+    ↓ (Qua dueDate)
+Quá hạn → OVERDUE
+    ↓ (Auto hoặc Manual)
+Hết hạn License → RETURNED
+```
+
+**Tính năng đặc biệt:**
+- **SCHEDULED**: Cho phép User hẹn trả trước, giúp Staff chuẩn bị nhận sách
+- **Overdue Detection**: Background job quét định kỳ hoặc check realtime khi query
+- **Fine Calculation**: Tính phí phạt dựa trên số ngày overdue (chưa auto-charge)
+
+### 5.3 Mượn Sách Số (License & VIP Check)
 Hệ thống phân biệt rõ hai mô hình bản quyền sách số, ảnh hưởng trực tiếp đến quyền lợi người dùng:
 
 - **OCOU (One Copy One User)**: Mô phỏng sách giấy. Thư viện chỉ mua ví dụ 50 lics. Nếu có 50 người đang đọc, người thứ 51 phải chờ (Waitlist). Áp dụng cho cả Basic & VIP.
@@ -421,18 +455,12 @@ Hệ thống phân biệt rõ hai mô hình bản quyền sách số, ảnh hư�
 
 *Quy trình kiểm tra:*
 
-\begin{figure}[H]
-    \centering
-    \includegraphics[width=0.9\linewidth]{img/chart_license.png}
-    \caption{Quy trình Mượn sách Số (License Check)}
-\end{figure}
+![Quy trình Mượn sách Số](img/chart_license.png)
+  <p><i>Hình 5.2: Quy trình Mượn sách Số (License Check)</i></p>
 
-### 5.3 Mua Gói VIP (Wallet Transaction)
-\begin{figure}[H]
-    \centering
-    \includegraphics[width=0.8\linewidth]{img/chart_vip.png}
-    \caption{Quy trình Nạp/Đăng ký VIP}
-\end{figure}
+### 5.4 Mua Gói VIP (Wallet Transaction)
+![Quy trình Nạp/Đăng ký VIP](img/chart_vip.png)
+  <p><i>Hình 5.3: Quy trình Nạp/Đăng ký VIP</i></p>
 
 ---
 
